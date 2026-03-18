@@ -1,0 +1,32 @@
+{
+    "8353717748": [
+        {
+            "ip": "px990502.pointtoserver.com",
+            "port": "10780",
+            "username": "purevpn0s8732217",
+            "password": "i67s60ep",
+            "proxy_url": "http://purevpn0s8732217:i67s60ep@px990502.pointtoserver.com:10780",
+            "type": "http"
+        }
+    ],
+    "8199779364": [
+        {
+            "ip": "co-bog.pvdata.host",
+            "port": "8080",
+            "username": "g2rTXpNfPdcw2fzGtWKp62yH",
+            "password": "nizar1elad2",
+            "proxy_url": "http://g2rTXpNfPdcw2fzGtWKp62yH:nizar1elad2@co-bog.pvdata.host:8080",
+            "type": "http"
+        }
+    ],
+    "6535960533": [
+        {
+            "ip": "px031901.pointtoserver.com",
+            "port": "10780",
+            "username": "purevpn0s8732217",
+            "password": "i67s60ep",
+            "proxy_url": "http://purevpn0s8732217:i67s60ep@px031901.pointtoserver.com:10780",
+            "type": "http"
+        }
+    ]
+}
