@@ -64,11 +64,8 @@ async def start(event):
         return await event.reply(banned_user_message())
 
     can_access, access_type = await can_use(user_id, chat)
-
-    # Get real current limit
     current_limit = await get_cc_limit(access_type, user_id)
 
-    # Premium status + expiry
     premium_status = "🆓 **Free User**"
     if await is_premium_user(user_id):
         premium_users = await load_json(PREMIUM_FILE)
@@ -78,7 +75,6 @@ async def start(event):
             remaining = max(0, (expiry - datetime.datetime.now()).days)
             premium_status = f"💎 **Premium Active** | Expires in {remaining} days"
 
-    # Role tag
     role_tag = ""
     if await is_owner(user_id):
         role_tag = "👑 Bot Owner"
@@ -92,45 +88,30 @@ async def start(event):
 
 ━━━━━━ **Main Gates** ━━━━━━
 **Shopify Auto-Charge**
-• `/sh` → Single CC check (random site from your DB)
-• `/msh` → Mass check cards from message/reply
-• `/mtxt` → Check full .txt file (sequential sites)
-• `/ran` → Check cards using random sites from sites.txt
+• `/sh` → Single CC check
+• `/msh` → Mass check from message
+• `/mtxt` → Check full .txt file
+• `/ran` → Random sites from sites.txt
 
-**Stripe Auth / Low-Value Probe**
-• `/st` → Single Stripe auth check
-• `/mst` → Mass Stripe auth from text
-• `/mstxt` → Stripe auth from .txt file
+**Stripe Auth**
+• `/st` → Single Stripe check
+• `/mst` → Mass Stripe from text
+• `/mstxt` → Stripe from .txt file
 
 **BIN Tools**
-• `/gen [amount] [bin] [cvv?]` → Generate & live check cards
-  Examples:
-  • `/gen 411111` → 50 Visa cards
-  • `/gen 100 545301` → 100 cards with BIN 545301
-  • `/gen 30 434256 777` → 30 cards, fixed CVV 777
+• `/gen [amount] [bin]` → Generate & check cards
 
-━━━━━━ **Your Tools** ━━━━━━
-• `/add` → Add your Shopify domains
-• `/rm` → Remove domains (/rm dead, /rm all, /rm 1)
-• `/check` → Test saved sites (auto-remove dead ones)
-• `/addpxy` → Add proxy (private only, max 10)
-• `/proxy` → List your proxies
-• `/rmpxy` → Remove proxy (by number or all)
-• `/info` → Your account stats & limits
-• `/redeem <key>` → Activate premium key
+**Tools**
+• `/add` → Add domains
+• `/addpxy` → Add proxy
+• `/info` → Your stats
 
-**Premium Perks (private chat only):**
-• Up to **4000+ cards** per mass check
-• Higher speed & priority proxy rotation
-• Full private power
-
-Type any command — bot guides you if needed.
-Start cooking or stay hungry 🍴
-
-Support: @Dreadsync_2 | Free Group: https://t.me/deebuchecked
+Start cooking 🔥
+Support: @Dreadsync_2
 """
 
     await event.reply(text, link_preview=False)
+    
 # ==================== ADMIN FUNCTIONS ====================
 async def load_admins():
     try:
@@ -1450,12 +1431,11 @@ def generate_card_from_bin(bin_str: str) -> str:
 
     return prefix[:-1] + str(check_digit)
 
-@client.on(events.NewMessage(pattern=r'(?i)^[/.]st'))
+@client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)')))
 async def st_command(event):
     can_access, access_type = await can_use(event.sender_id, event.chat)
     if access_type == "banned":
         return await event.reply(banned_user_message())
-
     if not can_access:
         buttons = [[Button.url("𝙐𝙨𝙚 𝙄𝙣 𝙂𝙧𝙤𝙪𝙥 𝙁𝙧𝙚𝙚", "https://t.me/+pNplrRLrEGY5NTU0")]]
         return await event.reply(
@@ -1480,15 +1460,11 @@ async def st_command(event):
         )
 
     loading = await event.reply("🍳 𝘾𝙝𝙚𝙘𝙠𝙞𝙣𝙜 𝙘𝙖𝙧𝙙...")
-
     try:
-        # Pick random key from your list (rotation helps avoid instant flag)
         stripe.api_key = random.choice(STRIPE_KEYS)
-
         cc, mm, yy, cvv = card.split("|")
         exp_year = int("20" + yy) if len(yy) == 2 else int(yy)
 
-        # Create PaymentIntent for $0.50 auth (most reliable small amount)
         intent = stripe.PaymentIntent.create(
             amount=AUTH_AMOUNT_CENTS,
             currency="usd",
@@ -1502,29 +1478,22 @@ async def st_command(event):
                 },
             },
             confirm=True,
-            capture_method="manual",           # do NOT auto-capture money
+            capture_method="manual",
             description="Bot CC check - auth only",
             metadata={"bot": "cc_checker", "user_id": str(event.sender_id)},
         )
 
-        # Card passed basic checks
         if intent.status in ["requires_capture", "succeeded"]:
-            # Void the authorization so no money is held
-            stripe.PaymentIntent.cancel(
-                intent.id,
-                cancellation_reason="requested_by_customer"
-            )
+            stripe.PaymentIntent.cancel(intent.id, cancellation_reason="requested_by_customer")
             status_header = "𝘼𝙋𝙋𝙍𝙊𝙑𝙀𝘿 ✅"
             response_text = "Card passed $0.50 auth (no 3DS triggered)"
             price = f"${AUTH_AMOUNT_CENTS/100:.2f}"
             status_result = "Approved"
-
         elif intent.status == "requires_action":
             status_header = "3D SECURE REQUIRED ⚠️"
             response_text = "Card requires 3DS verification"
             price = "-"
             status_result = "3DS"
-
         else:
             err = intent.last_payment_error
             decline_code = err.decline_code if err else "unknown"
@@ -1534,10 +1503,8 @@ async def st_command(event):
             price = "-"
             status_result = "Declined"
 
-        # BIN info
         brand, bin_type, level, bank, country, flag = await get_bin_info(cc)
 
-        # Final message
         result_msg = f"""{status_header}
 𝗖𝗖 ⇾ `{card}`
 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ⇾ Stripe
@@ -1549,11 +1516,8 @@ async def st_command(event):
         await loading.delete()
         sent = await event.reply(result_msg)
 
-        # Optional: save approved cards
         if "approved" in status_header.lower() or "succeeded" in intent.status:
             await save_approved_card(card, status_result, response_text, "Stripe Direct", price)
-
-        # Optional: pin if approved/charged
         if "approved" in status_header.lower():
             await pin_charged_message(event, sent)
 
