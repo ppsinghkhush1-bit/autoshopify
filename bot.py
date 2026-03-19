@@ -459,79 +459,57 @@ def extract_urls_from_text(text):
         if cleaned_line and is_valid_url_or_domain(cleaned_line): clean_urls.add(cleaned_line)
     return list(clean_urls)
 
+# ─── UPDATED & IMPROVED PROXY PARSER ─────────────────────────────────
 def parse_proxy(proxy: str):
+    """Universal proxy parser - supports all formats"""
     proxy = proxy.strip()
     if not proxy:
         return None
 
-    # -----------------------
-    # STEP 1: Extract scheme
-    # -----------------------
+    # Clean junk
+    proxy = re.sub(r'^[\[\(\{<\s]+|[\]\)\}>\s]+$', '', proxy)
+
     scheme = "http"
     if "://" in proxy:
-        scheme, proxy = proxy.split("://", 1)
-        scheme = scheme.lower()
+        scheme_part, proxy = proxy.split("://", 1)
+        scheme = scheme_part.lower()
 
     username = password = None
     host = port = None
 
-    # -----------------------
-    # STEP 2: Handle @ formats
-    # -----------------------
+    # Handle @ format: user:pass@host:port
     if "@" in proxy:
-        left, right = proxy.split("@", 1)
-
-        # user:pass
-        if ":" in left:
-            username, password = left.split(":", 1)
-
-        # host:port
-        if ":" in right:
-            host, port = right.split(":", 1)
-
+        auth, hostport = proxy.split("@", 1)
+        if ":" in auth:
+            username, password = auth.split(":", 1)
+        if ":" in hostport:
+            host, port = hostport.split(":", 1)
+        else:
+            host = hostport
     else:
         parts = proxy.split(":")
-
-        # -----------------------
-        # STEP 3: Detect formats
-        # -----------------------
-
         if len(parts) == 2:
-            # ip:port
             host, port = parts
-
         elif len(parts) == 3:
-            # ip:port:user  OR user:pass:host (rare messy input)
             if parts[1].isdigit():
                 host, port, username = parts
             else:
                 username, password, host = parts
-
         elif len(parts) >= 4:
-            # ip:port:user:pass OR long password with :
+            host = parts[0]
+            port = parts[1]
+            username = parts[2]
+            password = ":".join(parts[3:])   # Support : in password
+
+    # Fallback for socks4://ip:port:user:pass etc.
+    if (not host or not port) and re.match(r'.+:\d+:.+:.+', proxy):
+        parts = proxy.split(":")
+        if len(parts) >= 4:
             host = parts[0]
             port = parts[1]
             username = parts[2]
             password = ":".join(parts[3:])
 
-    # -----------------------
-    # STEP 4: Fix special format
-    # socks4://ip:port:user:pass
-    # -----------------------
-    if not host or not port:
-        match = re.match(
-            r'^(?P<host>[^:]+):(?P<port>\d+):(?P<user>[^:]+):(?P<pass>.+)$',
-            proxy
-        )
-        if match:
-            host = match.group("host")
-            port = match.group("port")
-            username = match.group("user")
-            password = match.group("pass")
-
-    # -----------------------
-    # STEP 5: Validate
-    # -----------------------
     if not host or not port:
         return None
 
@@ -546,9 +524,7 @@ def parse_proxy(proxy: str):
     if scheme not in ["http", "https", "socks4", "socks5"]:
         scheme = "http"
 
-    # -----------------------
-    # STEP 6: Build URL
-    # -----------------------
+    # Build full proxy_url
     if username and password:
         proxy_url = f"{scheme}://{username}:{password}@{host}:{port}"
     else:
@@ -1096,200 +1072,56 @@ async def add_proxy(event):
         parts = event.raw_text.split(maxsplit=1)
         if len(parts) != 2:
             return await event.reply(
-                "Format examples (any of these):\n\n"
+                "📌 **Supported Formats:**\n\n"
                 "`/addpxy 1.2.3.4:8080`\n"
                 "`/addpxy 1.2.3.4:8080:user:pass`\n"
                 "`/addpxy user:pass@5.6.7.8:1080`\n"
                 "`/addpxy socks5://user:pass@5.6.7.8:1080`\n"
                 "`/addpxy http://9.10.11.12:3128`\n"
-                "`/addpxy socks4://1.2.3.4:1080`"
+                "`/addpxy socks4://1.2.3.4:1080:user:pass`"
             )
 
         proxy_str = parts[1].strip()
-        proxy_data = parse_proxy_format(proxy_str)
+        proxy_data = parse_proxy(proxy_str)
 
         if not proxy_data:
-            return await event.reply(
-                "❌ Could not parse proxy string.\n\n"
-                "Supported formats (copy-paste any):\n"
-                "• 1.2.3.4:8080\n"
-                "• 1.2.3.4:8080:user:pass\n"
-                "• user:pass@5.6.7.8:1080\n"
-                "• socks5://user:pass@ip:port\n"
-                "• http://ip:port\n"
-                "• socks4://ip:port:user:pass\n"
-                "• ip:port (no auth)"
-            )
+            return await event.reply("❌ Could not parse proxy. Please use one of the formats above.")
 
         proxies = await load_json(PROXY_FILE)
         user_proxies = proxies.get(str(event.sender_id), [])
 
         if len(user_proxies) >= 10:
-            return await event.reply(
-                "❌ Proxy limit reached (10 max)!\n"
-                "Use `/rmpxy <number>` or `/rmpxy all`"
-            )
+            return await event.reply("❌ Proxy limit reached (10 max)!")
 
-        # ─── Duplicate checks ────────────────────────────────────────
-        # 1. Exact same proxy_url
+        # Duplicate check
         for existing in user_proxies:
             if existing['proxy_url'] == proxy_data['proxy_url']:
-                auth_info = f"   auth: {proxy_data['username']}:****" if proxy_data.get('username') else ""
-                return await event.reply(
-                    f"⚠️ This exact proxy already added!\n\n"
-                    f"🌐 {proxy_data['ip']}:{proxy_data['port']}{auth_info}\n"
-                    f"Type: {proxy_data['type'].upper()}\n\n"
-                    f"Use /proxy to see list."
-                )
+                return await event.reply("⚠️ This exact proxy is already added!")
 
-        # 2. Same IP + port, different auth
-        for existing in user_proxies:
-            if existing['ip'] == proxy_data['ip'] and existing['port'] == proxy_data['port']:
-                if existing.get('username') != proxy_data.get('username') or \
-                   existing.get('password') != proxy_data.get('password'):
-                    return await event.reply(
-                        f"⚠️ Same IP:Port already exists — different auth!\n\n"
-                        f"Old: {existing.get('username','no auth')}:{'*'*4 if existing.get('username') else ''}\n"
-                        f"New: {proxy_data.get('username','no auth')}:{'*'*4 if proxy_data.get('username') else ''}\n\n"
-                        f"Remove old first: `/rmpxy <number>`"
-                    )
-
-        # ─── Test proxy ──────────────────────────────────────────────
-        proxy_type_display = proxy_data['type'].upper()
-        testing_msg = await event.reply(f"🔄 Testing {proxy_type_display} proxy...")
-
+        # Test proxy
+        testing_msg = await event.reply(f"🔄 Testing {proxy_data['type'].upper()} proxy...")
         is_working, result = await test_proxy(proxy_data['proxy_url'])
 
         if not is_working:
-            await testing_msg.edit(
-                f"❌ Proxy dead / not working!\n\n"
-                f"Error: {result}\n\n"
-                f"Check IP, port, credentials."
-            )
+            await testing_msg.edit(f"❌ Proxy is dead!\n\nError: {result}")
             return
 
-        # ─── Add it ──────────────────────────────────────────────────
+        # Add proxy
         user_proxies.append(proxy_data)
         proxies[str(event.sender_id)] = user_proxies
         await save_json(PROXY_FILE, proxies)
 
         auth_display = f"👤 {proxy_data['username']}" if proxy_data.get('username') else "🔓 No auth"
         await testing_msg.edit(
-            f"✅ Proxy added & tested OK!\n\n"
-            f"🌐 External IP: {result}\n"
-            f"📍 {proxy_data['ip']}:{proxy_data['port']}\n"
-            f"🔐 Type: {proxy_type_display}\n"
+            f"✅ **Proxy Added Successfully!**\n\n"
+            f"🌐 {proxy_data['ip']}:{proxy_data['port']}\n"
+            f"🔐 Type: {proxy_data['type'].upper()}\n"
             f"{auth_display}\n"
             f"📊 Total proxies: {len(user_proxies)}/10"
         )
 
     except Exception as e:
         await event.reply(f"❌ Error: {str(e)[:120]}")
-
-def parse_proxy_format(proxy: str) -> dict | None:
-    proxy = proxy.strip()
-    if not proxy:
-        return None
-
-    # -----------------------
-    # STEP 1: Clean junk
-    # -----------------------
-    proxy = re.sub(r'^[\[\(\{<\s]+|[\]\)\}>\s]+$', '', proxy)
-
-    # -----------------------
-    # STEP 2: Detect scheme
-    # -----------------------
-    proxy_type = "http"
-    if "://" in proxy:
-        proxy_type, proxy = proxy.split("://", 1)
-        proxy_type = proxy_type.lower()
-
-    username = password = None
-    host = port = None
-
-    # -----------------------
-    # STEP 3: Handle @ format
-    # user:pass@host:port
-    # -----------------------
-    if "@" in proxy:
-        auth, hostport = proxy.split("@", 1)
-
-        if ":" in auth:
-            username, password = auth.split(":", 1)
-
-        parts = hostport.split(":")
-        if len(parts) >= 2:
-            host = parts[0]
-            port = parts[1]
-
-    else:
-        parts = proxy.split(":")
-
-        # -----------------------
-        # STEP 4: Smart detection
-        # -----------------------
-        if len(parts) == 2:
-            # ip:port
-            host, port = parts
-
-        elif len(parts) == 3:
-            # ip:port:user OR weird
-            if parts[1].isdigit():
-                host, port, username = parts
-            else:
-                username, password, host = parts
-
-        elif len(parts) >= 4:
-            # ip:port:user:pass (IMPORTANT FIX)
-            host = parts[0]
-            port = parts[1]
-            username = parts[2]
-            password = ":".join(parts[3:])  # allow ":" in password
-
-    # -----------------------
-    # STEP 5: Fallback for socks4://ip:port:user:pass
-    # -----------------------
-    if (not host or not port) and re.match(r'.+:\d+:.+:.+', proxy):
-        parts = proxy.split(":")
-        if len(parts) >= 4:
-            host = parts[0]
-            port = parts[1]
-            username = parts[2]
-            password = ":".join(parts[3:])
-
-    # -----------------------
-    # STEP 6: Validate
-    # -----------------------
-    if not host or not port:
-        return None
-
-    try:
-        port = int(port)
-        if not (1 <= port <= 65535):
-            return None
-    except:
-        return None
-
-    # Normalize scheme
-    if proxy_type not in ["http", "https", "socks4", "socks5"]:
-        proxy_type = "http"
-
-    # -----------------------
-    # STEP 7: Build URL
-    # -----------------------
-    if username and password:
-        proxy_url = f"{proxy_type}://{username}:{password}@{host}:{port}"
-    else:
-        proxy_url = f"{proxy_type}://{host}:{port}"
-
-    return {
-        "ip": host,
-        "port": str(port),
-        "username": username,
-        "password": password,
-        "proxy_url": proxy_url,
-        "type": proxy_type
-    }
 
 @client.on(events.NewMessage(pattern='/rmpxy'))
 async def remove_proxy(event):
@@ -1347,36 +1179,24 @@ async def remove_proxy(event):
 
 @client.on(events.NewMessage(pattern='/proxy'))
 async def view_proxy(event):
-    # This command works in private only
     if event.is_group:
-        return await event.reply("🔒 𝙏𝙝𝙞𝙨 𝙘𝙤𝙢𝙢𝙖𝙣𝙙 𝙤𝙣𝙡𝙮 𝙬𝙤𝙧𝙠𝙨 𝙞𝙣 𝙥𝙧𝙞𝙫𝙖𝙩𝙚 𝙘𝙝𝙖𝙩!")
-    
+        return await event.reply("🔒 This command only works in private chat!")
+
     if await is_banned_user(event.sender_id):
         return await event.reply(banned_user_message())
-    
-    try:
-        user_proxies = await get_all_user_proxies(event.sender_id)
-        
-        if not user_proxies:
-            return await event.reply("❌ 𝙔𝙤𝙪 𝙙𝙤𝙣'𝙩 𝙝𝙖𝙫𝙚 𝙖𝙣𝙮 𝙥𝙧𝙤𝙭𝙮 𝙨𝙖𝙫𝙚𝙙!\n\n𝙐𝙨𝙚 /addpxy 𝙩𝙤 𝙖𝙙𝙙 𝙤𝙣𝙚.")
-        
-        # Build proxy list message
-        proxy_list = f"📡 **𝙔𝙤𝙪𝙧 𝙋𝙧𝙤𝙭𝙞𝙚𝙨** ({len(user_proxies)}/10)\n\n"
-        
-        for idx, proxy_data in enumerate(user_proxies, 1):
-            proxy_type = proxy_data.get('type', 'http').upper()
-            auth_info = ""
-            if proxy_data.get('username'):
-                auth_info = f" | 👤 {proxy_data['username']}"
-            
-            proxy_list += f"`{idx}.` 🔐 {proxy_type} | 📍 {proxy_data['ip']}:{proxy_data['port']}{auth_info}\n"
-        
-        proxy_list += f"\n**ℹ️ 𝙄𝙣𝙛𝙤:**\n• Bot uses random proxy for each check\n• Dead proxies are auto-removed\n• Supports HTTP, HTTPS, SOCKS4, SOCKS5\n• Use `/rmpxy <index>` to remove specific proxy\n• Use `/rmpxy all` to remove all proxies"
-        
-        await event.reply(proxy_list)
-        
-    except Exception as e:
-        await event.reply(f"❌ 𝙀𝙧𝙧𝙤𝙧: {e}")
+
+    user_proxies = await get_all_user_proxies(event.sender_id)
+
+    if not user_proxies:
+        return await event.reply("❌ You have no proxies saved.\nUse `/addpxy` to add one.")
+
+    text = f"📡 **Your Proxies** ({len(user_proxies)}/10)\n\n"
+    for idx, p in enumerate(user_proxies, 1):
+        auth = f" | 👤 {p['username']}" if p.get('username') else ""
+        text += f"`{idx}.` {p['type'].upper()} → {p['ip']}:{p['port']}{auth}\n"
+
+    text += "\n💡 Use `/rmpxy <number>` or `/rmpxy all` to remove"
+    await event.reply(text)
 
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]gen(?:\s+(\d+))?\s*(\d{6})?\s*(\d+)?'))
 async def gen_cards(event):
