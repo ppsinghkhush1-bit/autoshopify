@@ -1201,11 +1201,11 @@ async def view_proxy(event):
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]gen(?:\s+(\d+))?\s*(\d{6})?\s*(\d+)?'))
 async def gen_cards(event):
     """
-    /gen [amount] [bin] [cvv optional]
+    /gen [amount] [bin] [cvv]
     Examples:
-    /gen 50 411111
-    /gen 411111 100
-    /gen 30 545301 123   ← fixed CVV
+    • /gen 411111
+    • /gen 100 545301
+    • /gen 30 434256 777
     """
     can_access, access_type = await can_use(event.sender_id, event.chat)
     if access_type == "banned":
@@ -1217,36 +1217,36 @@ async def gen_cards(event):
             buttons=[[Button.url("Join Group", "https://t.me/deebuchecked")]]
         )
 
-    # Parse arguments
+    # ─── Better Argument Parsing ─────────────────────────────────────
     parts = event.raw_text.split()
     amount = 50
     bin_input = None
     fixed_cvv = None
 
-    if len(parts) >= 2:
-        for p in parts[1:]:
-            if p.isdigit() and 6 <= len(p) <= 8:
+    for p in parts[1:]:
+        if p.isdigit():
+            if 6 <= len(p) <= 8:          # BIN
                 bin_input = p
-            elif p.isdigit() and int(p) <= 500:
-                amount = int(p)
-            elif len(p) in [3,4] and p.isdigit():
+            elif len(p) in [3, 4]:        # CVV
                 fixed_cvv = p
+            elif 1 <= int(p) <= 300:      # Amount
+                amount = int(p)
 
     if not bin_input:
         return await event.reply(
-            "Format examples:\n"
-            "• `/gen 411111`           → 50 cards with BIN 411111\n"
-            "• `/gen 100 545301`       → 100 cards with BIN 545301\n"
-            "• `/gen 30 434256 999`    → 30 cards, fixed CVV 999\n\n"
-            "Max amount: 300 (anti-ban)"
+            "**Usage Examples:**\n"
+            "• `/gen 411111` → 50 cards\n"
+            "• `/gen 100 545301` → 100 cards\n"
+            "• `/gen 30 434256 777` → 30 cards with fixed CVV 777\n\n"
+            "Max amount: **300** (anti-ban)"
         )
 
     if not bin_input.isdigit() or not (6 <= len(bin_input) <= 8):
-        return await event.reply("BIN must be 6–8 digits (e.g. 411111 or 54530111)")
+        return await event.reply("❌ BIN must be 6–8 digits (e.g. `411111` or `54530111`)")
 
-    amount = min(max(amount, 1), 300)  # hard limit to avoid abuse
+    amount = min(max(amount, 1), 300)
 
-    loading = await event.reply(f"🔄 Generating & checking {amount} cards with BIN {bin_input}...")
+    loading = await event.reply(f"🔄 Generating & checking **{amount}** cards with BIN `{bin_input}`...")
 
     live = []
     dead = 0
@@ -1254,15 +1254,13 @@ async def gen_cards(event):
 
     async with aiohttp.ClientSession() as session:
         for _ in range(amount):
-            # Generate random card based on BIN
             card_number = generate_card_from_bin(bin_input)
             month = random.randint(1, 12)
-            year = random.randint(25, 29)   # 2025–2029
+            year = random.randint(25, 29)
             cvv = fixed_cvv if fixed_cvv else f"{random.randint(0,999):03d}"
 
             full_cc = f"{card_number}|{month:02d}|{year:02d}|{cvv}"
 
-            # Check via https://api.chkr.cc/
             try:
                 async with session.get(
                     f"https://api.chkr.cc/?cc={full_cc}",
@@ -1275,61 +1273,57 @@ async def gen_cards(event):
                     text = await resp.text()
                     text_lower = text.lower()
 
-                    if any(x in text_lower for x in ["approved", "success", "live", "valid", "pass", "ok"]):
+                    if any(word in text_lower for word in ["approved", "success", "live", "valid", "pass", "ok"]):
                         live.append(full_cc)
-                    elif any(x in text_lower for x in ["decline", "dead", "fail", "invalid", "error"]):
-                        dead += 1
                     else:
-                        # ambiguous → count as dead
                         dead += 1
 
             except Exception:
                 error += 1
 
-            await asyncio.sleep(random.uniform(0.6, 1.8))  # polite rate limit
+            await asyncio.sleep(random.uniform(0.7, 1.9))  # Rate limit
 
-    # Final result
-    result = f"""**GEN Result — {bin_input}**
-
-Cards generated & checked: **{amount}**
+    # ─── Final Result ────────────────────────────────────────────────
+    result = f"""**GEN Result — BIN {bin_input}**
+Cards Generated: **{amount}**
 ✅ **Live/Hits:** {len(live)}
 ❌ **Dead:** {dead}
-⚠️ **Errors/Timeouts:** {error}
-
+⚠️ **Errors:** {error}
 """
-    if live:
-        result += "**Live cards:**\n```"
-        result += "\n".join(live)
-        result += "```\n\n"
 
-        # Optional: save to file
+    if live:
+        result += "\n**Live Cards:**\n```\n"
+        result += "\n".join(live)
+        result += "\n```"
+
         try:
             async with aiofiles.open("live_cards.txt", "a", encoding="utf-8") as f:
                 await f.write("\n".join(live) + "\n")
-            result += "→ Saved to `live_cards.txt`"
+            result += "\n→ Saved to `live_cards.txt`"
         except:
-            result += "→ Could not save to file"
-
+            result += "\n→ Could not save to file"
     else:
-        result += "No live cards found in this batch."
+        result += "\nNo live cards found in this batch."
 
     await loading.edit(result)
 
 
-# Helper: generate full card number from BIN (Luhn compliant)
+# Helper: Luhn compliant card generator (Improved)
 def generate_card_from_bin(bin_str: str) -> str:
-    """Generates valid-looking card number with Luhn checksum"""
-    # Pad BIN to 15 digits if needed (will add last digit later)
+    """Generates valid card number from BIN with Luhn checksum"""
+    # Make sure BIN is 6-8 digits
+    bin_str = bin_str[:8]
+    
+    # Pad to 15 digits (we'll add checksum as 16th)
     prefix = bin_str.ljust(15, '0')
     digits = [int(d) for d in prefix]
 
-    # Luhn algorithm - double every second digit from right
+    # Luhn Algorithm
     for i in range(len(digits)-2, -1, -2):
         digits[i] *= 2
         if digits[i] > 9:
             digits[i] -= 9
 
-    # Calculate checksum
     total = sum(digits)
     check_digit = (10 - (total % 10)) % 10
 
