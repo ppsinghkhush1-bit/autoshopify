@@ -459,77 +459,70 @@ def extract_urls_from_text(text):
         if cleaned_line and is_valid_url_or_domain(cleaned_line): clean_urls.add(cleaned_line)
     return list(clean_urls)
 
-def parse_proxy_format(proxy):
-    """Parse proxy in multiple formats with protocol support"""
-    import re
-    
+def parse_proxy_format(proxy: str):
     proxy = proxy.strip()
-    proxy_type = 'http'  # default
-    
-    # Check if protocol is specified (socks5://, socks4://, http://, https://)
+    proxy_type = "http"
+
+    # Extract protocol if present
     protocol_match = re.match(r'^(socks5|socks4|http|https)://(.+)$', proxy, re.IGNORECASE)
     if protocol_match:
         proxy_type = protocol_match.group(1).lower()
         proxy = protocol_match.group(2)
-    
-    host = ''
-    port = ''
-    username = ''
-    password = ''
-    
-    # Format: username:password@host:port
-    match = re.match(r'^([^@:]+):([^@]+)@([^:@]+):(\d+)$', proxy)
-    if match:
-        username, password, host, port = match.groups()
-    # Format: host:port@username:password
-    elif re.match(r'^([a-zA-Z0-9\.\-]+):(\d+)@([^:]+):(.+)$', proxy):
-        match = re.match(r'^([a-zA-Z0-9\.\-]+):(\d+)@([^:]+):(.+)$', proxy)
-        host, port, username, password = match.groups()
-    # Format: host:port:username:password (check if 2nd part is valid port)
-    elif re.match(r'^([^:]+):(\d+):([^:]+):(.+)$', proxy):
-        match = re.match(r'^([^:]+):(\d+):([^:]+):(.+)$', proxy)
-        potential_host, potential_port, potential_user, potential_pass = match.groups()
-        # Validate port number
-        if 0 < int(potential_port) <= 65535:
-            host, port, username, password = potential_host, potential_port, potential_user, potential_pass
-    # Format: host:port (no authentication)
-    elif re.match(r'^([^:@]+):(\d+)$', proxy):
-        match = re.match(r'^([^:@]+):(\d+)$', proxy)
-        host, port = match.groups()
-    else:
-        return None
-    
-    # Validate that we have at least host and port
+
+    host = port = username = password = None
+
+    patterns = [
+        # username:password@host:port
+        r'^(?P<username>[^@:]+):(?P<password>[^@]+)@(?P<host>[^:@]+):(?P<port>\d+)$',
+
+        # host:port@username:password
+        r'^(?P<host>[a-zA-Z0-9\.\-]+):(?P<port>\d+)@(?P<username>[^:]+):(?P<password>.+)$',
+
+        # host:port:username:password
+        r'^(?P<host>[^:]+):(?P<port>\d+):(?P<username>[^:]+):(?P<password>.+)$',
+
+        # host:port
+        r'^(?P<host>[^:@]+):(?P<port>\d+)$'
+    ]
+
+    for pattern in patterns:
+        match = re.match(pattern, proxy)
+        if match:
+            data = match.groupdict()
+            host = data.get("host")
+            port = data.get("port")
+            username = data.get("username")
+            password = data.get("password")
+            break
+
     if not host or not port:
         return None
-    
-    # Validate port is numeric and in valid range
+
+    # Validate port
     try:
         port_num = int(port)
-        if port_num <= 0 or port_num > 65535:
+        if not (1 <= port_num <= 65535):
             return None
     except ValueError:
         return None
-    
-    # Build proxy URL based on type and authentication
+
+    # Normalize scheme
+    if proxy_type not in ["socks5", "socks4"]:
+        proxy_type = "http"
+
+    # Build URL
     if username and password:
-        if proxy_type in ['socks5', 'socks4']:
-            proxy_url = f'{proxy_type}://{username}:{password}@{host}:{port}'
-        else:
-            proxy_url = f'http://{username}:{password}@{host}:{port}'
+        proxy_url = f"{proxy_type}://{username}:{password}@{host}:{port}"
     else:
-        if proxy_type in ['socks5', 'socks4']:
-            proxy_url = f'{proxy_type}://{host}:{port}'
-        else:
-            proxy_url = f'http://{host}:{port}'
-    
+        proxy_url = f"{proxy_type}://{host}:{port}"
+
     return {
-        'ip': host,
-        'port': port,
-        'username': username if username else None,
-        'password': password if password else None,
-        'proxy_url': proxy_url,
-        'type': proxy_type
+        "ip": host,
+        "port": port,
+        "username": username,
+        "password": password,
+        "proxy_url": proxy_url,
+        "type": proxy_type
     }
 
 async def test_proxy(proxy_url):
