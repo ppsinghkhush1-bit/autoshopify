@@ -3,21 +3,21 @@ from telethon.tl.types import KeyboardButtonCallback, MessageEntityCustomEmoji
 import requests, random, datetime, json, os, re, asyncio, time
 import string, hashlib, aiohttp, stripe, aiofiles
 from urllib.parse import urlparse
-import html  # for html.escape
+import html
 
 # ─── CONFIG ────────────────────────────────────────────────────────
 API_ID = 37056675
 API_HASH = "7517ae9cd54e88cb63f39a061d8bb77f"
 BOT_TOKEN = "8644266957:AAEYmAA2uiR9732a_8xnyBJUEr_NXUyyCPs"
-ADMIN_ID = [8353717748, 8499514151, 8467239599, 7565709009]
-GROUP_ID = -1003578985585
 
+# Dynamic Admin System
+ADMIN_FILE = "admins.json"
+OWNER_ID = 8353717748  # Bot Owner (cannot be removed)
+
+GROUP_ID = -1003578985585
 STRIPE_KEYS = ["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"]
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#                     PREMIUM CUSTOM EMOJI MAPPING
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+# PREMIUM CUSTOM EMOJI MAPPING
 STATUS_EMOJIS = {
     "CHARGED":           "5197434882321567830",    # 💰 green/money explosion
     "APPROVED":          "6147565374289220368",    # ✅ big green check
@@ -34,27 +34,48 @@ SPECIAL_EMOJIS = {
     "LOADING":           "5927197323955278457",    # animated cooking/spinner
     "SUCCESS_SMALL":     "5456441785595206330",    # small green tick
     "FIRE":              "5798670723975221399",    # 🔥 enhanced flame
-    "STOP":              "5276448712766266718",    # ⛔ big red stop
+    "STOP":              "5276448712766266718",    # ⛔️ big red stop
     "STATS":             "6289610422488139897",    # 📊 chart
 }
 
-# ─── CREATE CLIENT ──────────────────────────────────────────────────
 client = TelegramClient('cc_bot', API_ID, API_HASH)
 
 # Files
-PREMIUM_FILE    = "premium.json"
-FREE_FILE       = "free_users.json"
-SITE_FILE       = "user_sites.json"
-KEYS_FILE       = "keys.json"
-CC_FILE         = "cc.txt"
-BANNED_FILE     = "banned_users.json"
-PROXY_FILE      = "proxy.json"
+PREMIUM_FILE = "premium.json"
+FREE_FILE = "free_users.json"
+SITE_FILE = "user_sites.json"
+KEYS_FILE = "keys.json"
+CC_FILE = "cc.txt"
+BANNED_FILE = "banned_users.json"
+PROXY_FILE = "proxy.json"
+ADMIN_FILE = "admins.json"   # ← Added
 
 stripe.api_key = STRIPE_KEYS[0]
 
 ACTIVE_MTXT_PROCESSES = {}
 TEMP_WORKING_SITES = {}
 
+# ==================== ADMIN FUNCTIONS ====================
+async def load_admins():
+    try:
+        data = await load_json(ADMIN_FILE)
+        admins = data.get("admins", [])
+        if OWNER_ID not in admins:
+            admins.append(OWNER_ID)
+        return admins
+    except:
+        return [OWNER_ID]
+
+async def save_admins(admins_list):
+    data = {"admins": admins_list}
+    await save_json(ADMIN_FILE, data)
+
+async def is_owner(user_id):
+    return user_id == OWNER_ID
+
+async def is_admin(user_id):
+    admins = await load_admins()
+    return user_id in admins
 # --- Utility Functions ---
 async def create_json_file(filename):
     try:
@@ -158,6 +179,28 @@ async def get_bin_info(card_number):
                     return brand, bin_type, level, bank, country, flag
                 except json.JSONDecodeError: return "-", "-", "-", "-", "-", "🏳️"
     except Exception: return "-", "-", "-", "-", "-", "🏳️"
+
+async def load_admins():
+    try:
+        data = await load_json(ADMIN_FILE)
+        admins = data.get("admins", [])
+        # Always ensure owner is in admin list
+        if OWNER_ID not in admins:
+            admins.append(OWNER_ID)
+        return admins
+    except:
+        return [OWNER_ID]
+
+async def save_admins(admins_list):
+    data = {"admins": admins_list}
+    await save_json(ADMIN_FILE, data)
+
+async def is_owner(user_id):
+    return user_id == OWNER_ID
+
+async def is_admin(user_id):
+    admins = await load_admins()
+    return user_id in admins
 
 def normalize_card(text):
     if not text: return None
@@ -423,7 +466,7 @@ async def can_use(user_id, chat):
 
 def get_cc_limit(access_type, user_id=None):
     # Check if user is admin first
-    if user_id and user_id in ADMIN_ID:
+    if user_id and await is_admin(user_id):
         return 5000
     if access_type in ["premium_private", "premium_group"]:
         return 4000
@@ -645,6 +688,80 @@ def access_denied_message_with_button():
     return message, buttons
 
 # --- Bot Command Handlers ---
+# ====================== ADD ADMIN ======================
+@client.on(events.NewMessage(pattern=r'(?i)^[/.]addadmin'))
+async def add_admin(event):
+    if not await is_owner(event.sender_id):
+        return await event.reply("🚫 **Only the Bot Owner can add admins!**")
+
+    try:
+        parts = event.raw_text.split()
+        if len(parts) != 2:
+            return await event.reply("**Format:**\n`/addadmin <user_id>`\n\nExample: `/addadmin 123456789`")
+
+        new_admin_id = int(parts[1])
+
+        if new_admin_id == OWNER_ID:
+            return await event.reply("✅ Owner is already admin by default.")
+
+        admins = await load_admins()
+
+        if new_admin_id in admins:
+            return await event.reply(f"⚠️ User `{new_admin_id}` is already an admin.")
+
+        admins.append(new_admin_id)
+        await save_admins(admins)
+
+        await event.reply(f"✅ **New Admin Added!**\nUser ID: `{new_admin_id}`\n\nNow has full admin rights.")
+
+        # Notify the new admin
+        try:
+            await client.send_message(new_admin_id, f"🎉 **Congratulations!**\n\nYou have been promoted to **Bot Admin** by the owner.\nYou can now use admin commands.")
+        except:
+            pass
+
+    except ValueError:
+        await event.reply("❌ Invalid User ID! Must be a number.")
+    except Exception as e:
+        await event.reply(f"❌ Error: {str(e)}")
+
+
+# ====================== REMOVE ADMIN ======================
+@client.on(events.NewMessage(pattern=r'(?i)^[/.]rmadmin'))
+async def remove_admin(event):
+    if not await is_owner(event.sender_id):
+        return await event.reply("🚫 **Only the Bot Owner can remove admins!**")
+
+    try:
+        parts = event.raw_text.split()
+        if len(parts) != 2:
+            return await event.reply("**Format:**\n`/rmadmin <user_id>`\n\nExample: `/rmadmin 123456789`")
+
+        target_id = int(parts[1])
+
+        if target_id == OWNER_ID:
+            return await event.reply("❌ **You cannot remove the Owner!**")
+
+        admins = await load_admins()
+
+        if target_id not in admins:
+            return await event.reply(f"⚠️ User `{target_id}` is not an admin.")
+
+        admins.remove(target_id)
+        await save_admins(admins)
+
+        await event.reply(f"✅ **Admin Removed!**\nUser ID: `{target_id}`")
+
+        # Notify the removed admin
+        try:
+            await client.send_message(target_id, "⚠️ You have been **demoted** from Bot Admin.")
+        except:
+            pass
+
+    except ValueError:
+        await event.reply("❌ Invalid User ID! Must be a number.")
+    except Exception as e:
+        await event.reply(f"❌ Error: {str(e)}")
 
 @client.on(events.NewMessage(pattern=r'(?i)^[/.](start|cmds?|commands?)$'))
 async def start(event):
@@ -705,7 +822,7 @@ Start cooking or get left behind 🔥"""
 
 @client.on(events.NewMessage(pattern='/auth'))
 async def auth_user(event):
-    if event.sender_id not in ADMIN_ID: return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣 𝘾𝙖𝙣 𝙐𝙨𝙚 𝙏𝙝𝙞𝙨 𝘾𝙤𝙢𝙢𝙖𝙣𝙙!")
+    if not await is_admin(event.sender_id): return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣 𝘾𝙖𝙣 𝙐𝙨𝙚 𝙏𝙝𝙞𝙨 𝘾𝙤𝙢𝙢𝙖𝙣𝙙!")
     try:
         parts = event.raw_text.split()
         if len(parts) != 3: return await event.reply("𝙁𝙤𝙧𝙢𝙖𝙩: /auth {user_id} {days}")
@@ -720,7 +837,7 @@ async def auth_user(event):
 
 @client.on(events.NewMessage(pattern='/key'))
 async def generate_keys(event):
-    if event.sender_id not in ADMIN_ID: return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣 𝘾𝙖𝙣 𝙐𝙨𝙚 𝙏𝙝𝙞𝙨 𝘾𝙤𝙢𝙢𝙖𝙣𝙙!")
+    if not await is_admin(event.sender_id): return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣 𝘾𝙖𝙣 𝙐𝙨𝙚 𝙏𝙝𝙞𝙨 𝘾𝙤𝙢𝙢𝙖𝙣𝙙!")
     try:
         parts = event.raw_text.split()
         if len(parts) != 3: return await event.reply("𝙁𝙤𝙧𝙢𝙖𝙩: /key {amount} {days}")
@@ -1834,269 +1951,196 @@ Country: {country} {flag}</code></pre>
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]msh'))
 async def msh(event):
     can_access, access_type = await can_use(event.sender_id, event.chat)
-    if access_type == "banned": return await event.reply(banned_user_message())
+    if access_type == "banned":
+        return await event.reply(banned_user_message())
     if not can_access:
-        buttons = [[Button.url("𝙐𝙨𝙚 𝙄𝙣 𝙂𝙧𝙤𝙪𝙥 𝙁𝙧𝙚𝙚", f"https://t.me/+pNplrRLrEGY5NTU0")]]
-        return await event.reply("🚫 𝙐𝙣𝙖𝙪𝙩𝙝𝙤𝙧𝙞𝙨𝙚𝙙 𝘼𝙘𝙘𝙚𝙨𝙨!\n\n𝙔𝙤𝙪 𝙘𝙖𝙣 𝙪𝙨𝙚 𝙩𝙝𝙞𝙨 𝙗𝙤𝙩 𝙞𝙣 𝙜𝙧𝙤𝙪𝙥 𝙛𝙤𝙧 𝙛𝙧𝙚𝙚!\n\n𝙁𝙤𝙧 𝙥𝙧𝙞𝙫𝙖𝙩𝙚 𝙖𝙘𝙘𝙚𝙨𝙨, 𝙘𝙤𝙣𝙩𝙖𝙘𝙩 @Dreadsync_2", buttons=buttons)
-    
-    # Check if user has added proxy
+        buttons = [[Button.url("𝙐𝙨𝙚 𝙄𝙣 𝙂𝙧𝙤𝙪𝙥 𝙁𝙧𝙚𝙚", "https://t.me/deebuchecked")]]
+        return await event.reply("🚫 Unauthorized! Join group for free use.", buttons=buttons)
+
     proxy_data = await get_user_proxy(event.sender_id)
     if not proxy_data:
-        return await event.reply("⚠️ 𝙋𝙧𝙤𝙭𝙮 𝙍𝙚𝙦𝙪𝙞𝙧𝙚𝙙!\n\n𝙋𝙡𝙚𝙖𝙨𝙚 𝙖𝙙𝙙 𝙖 𝙥𝙧𝙤𝙭𝙮 𝙛𝙞𝙧𝙨𝙩 𝙪𝙨𝙞𝙣𝙜:\n`/addpxy ip:port:username:password`\n\n𝙊𝙧 𝙬𝙞𝙩𝙝𝙤𝙪𝙩 𝙖𝙪𝙩𝙝:\n`/addpxy ip:port`")
-    
+        return await event.reply("⚠️ Proxy required! Use /addpxy first.")
+
     cards = []
     if event.reply_to_msg_id:
-        replied_msg = await event.get_reply_message()
-        if replied_msg and replied_msg.text: cards = extract_all_cards(replied_msg.text)
-        if not cards: return await event.reply("𝘾𝙤𝙪𝙡𝙙𝙣'𝙩 𝙚𝙭𝙩𝙧𝙖𝙘𝙩 𝙫𝙖𝙡𝙞𝙙 𝙘𝙖𝙧𝙙𝙨 𝙛𝙧𝙤𝙢 𝙧𝙚𝙥𝙡𝙞𝙚𝙙 𝙢𝙚𝙨𝙨𝙖𝙜𝙚\n\n𝙁𝙤𝙧𝙢𝙚𝙩. /𝙢𝙨𝙝 4111111111111111|12|2025|123 4111111111111111|12|2025|123")
+        replied = await event.get_reply_message()
+        if replied and replied.text:
+            cards = extract_all_cards(replied.text)
     else:
-        cards = extract_all_cards(event.raw_text)
-        if not cards: return await event.reply("𝙁𝙤𝙧𝙢𝙚𝙩. /𝙢𝙨𝙝 4111111111111111|12|2025|123 4111111111111111|12|2025|123 4111111111111111|12|2025|123\n\n𝙊𝙧 𝙧𝙚𝙥𝙡𝙮 𝙩𝙤 𝙖 𝙢𝙚𝙨𝙨𝙖𝙜𝙚 𝙘𝙤𝙣𝙩𝙖𝙞𝙣𝙞𝙣𝙜 𝙢𝙪𝙡𝙩𝙞𝙥𝙡𝙚 𝙘𝙖𝙧𝙙𝙨")
+        cards = extract_all_cards(event.raw_text[4:].strip())
+
+    if not cards:
+        return await event.reply("No valid cards found.\nFormat: 4111111111111111|12|25|123")
+
     if len(cards) > 20:
         cards = cards[:20]
-        await event.reply(f"``` ⚠️ 𝙊𝙣𝙡𝙮 𝙘𝙝𝙚𝙘𝙠𝙞𝙣𝙜 𝙛𝙞𝙧𝙨𝙩 20 𝙘𝙖𝙧𝙙𝙨 𝙤𝙪𝙩 𝙤𝙛 {len(extract_all_cards(event.raw_text if not event.reply_to_msg_id else replied_msg.text))} 𝙥𝙧𝙤𝙫𝙞𝙙𝙚𝙙. 𝙇𝙞𝙢𝙞𝙩 𝙞𝙨 20 𝙘𝙖𝙧𝙙𝙨 𝙛𝙤𝙧 /𝙢𝙨𝙝.```")
+        await event.reply(f"⚠️ Only checking first 20 cards (limit reached)")
+
     sites = await load_json(SITE_FILE)
     user_sites = sites.get(str(event.sender_id), [])
-    if not user_sites: return await event.reply("𝙔𝙤𝙪𝙧 𝘼𝙧𝙚𝙚 𝙣𝙤𝙩 𝘼𝙙𝙙𝙚𝙙 𝘼𝙣𝙮 𝙐𝙧𝙡 𝙁𝙞𝙧𝙨𝙩 𝘼𝙙𝙙 𝙐𝙧𝙡")
-    asyncio.create_task(process_msh_cards(event, cards, user_sites))
+    if not user_sites:
+        return await event.reply("No sites added. Use /add first.")
+
+    await process_msh_cards(event, cards, user_sites)
+
 
 async def process_msh_cards(event, cards, sites):
-    # Get username
-    try:
-        sender = await event.get_sender()
-        username = sender.username if sender.username else f"user_{event.sender_id}"
-    except:
-        username = f"user_{event.sender_id}"
-    
-    # Initial cooking message with animated feel
-    sent_msg = await event.reply(f"🔥 𝙎𝙤𝙢𝙚𝙩𝙝𝙞𝙣𝙜 𝘽𝙞𝙜 𝙞𝙨 𝘾𝙤𝙤𝙠𝙞𝙣𝙜 🍳 {len(cards)} 𝙘𝙖𝙧𝙙𝙨 𝙡𝙤𝙖𝙙𝙚𝙙...")
+    status_msg = await event.reply(f"🔥 Cooking {len(cards)} cards...")
 
-    # ─── Animated cooking progress phrases ───────────────────────────────
-    cooking_phrases = [
-                       f"<tg-emoji emoji-id=\"{SPECIAL_EMOJIS['LOADING']}\"></tg-emoji> Cooking..."
-    ]
+    charged = 0
+    approved = 0
+    declined = 0
 
-    async def update_cooking_status(batch_num, total_batches):
+    for i, card in enumerate(cards, 1):
+        site = random.choice(sites)
         try:
-            phrase = cooking_phrases[batch_num % len(cooking_phrases)]
-            phrase = phrase.format(batch=batch_num + 1, total_batches=total_batches)
-            await sent_msg.edit(f"{phrase}\n\n𝙋𝙧𝙤𝙜𝙧𝙚𝙨𝙨: {batch_num}/{total_batches} 𝙗𝙖𝙩𝙘𝙝𝙚𝙨")
-        except:
-            pass
-
-    cards_per_site = 2
-    current_site_index = 0
-    cards_on_current_site = 0
-
-    batch_size = 10
-    total_batches = (len(cards) + batch_size - 1) // batch_size
-
-    for i in range(0, len(cards), batch_size):
-        batch_num = i // batch_size + 1
-        await update_cooking_status(batch_num, total_batches)
-
-        batch = cards[i:i + batch_size]
-        tasks = []
-
-        for card in batch:
-            current_site = sites[current_site_index]
-            tasks.append(check_card_specific_site(card, current_site, event.sender_id))
-            cards_on_current_site += 1
-            if cards_on_current_site >= cards_per_site:
-                current_site_index = (current_site_index + 1) % len(sites)
-                cards_on_current_site = 0
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for j, (card, result) in enumerate(zip(batch, results)):
-            if isinstance(result, Exception):
-                result = {"Response": f"Exception: {str(result)}", "Price": "-", "Gateway": "-"}
-
-            # Fake small elapsed time per card (looks more natural)
-            elapsed_time = round(random.uniform(1.8, 4.2), 2)
-
-            brand, bin_type, level, bank, country, flag = await get_bin_info(card.split("|")[0])
+            result = await check_card_specific_site(card, site, event.sender_id)
             response_text = result.get("Response", "").lower()
-            status_text = result.get("Status", "").lower()
 
-            # ─── Get random premium animated emoji for this card ────────────────
-            emoji_id = await get_random_premium_emoji_id(event.sender_id)
-
-            is_charged = False
-
-            if "charged" in response_text or "charged" in status_text:
-                status_header = f"𝘾𝙃𝘼𝙍𝙂𝙀𝘿 {emoji_id}" if emoji_id else "𝘾𝙃𝘼𝙍𝙂𝙀𝘿 💎"
-                status_result = "Charged"
-                is_charged = True
-                await save_approved_card(card, status_result, result.get('Response'), result.get('Gateway'), result.get('Price'))
-
-            elif "cloudflare bypass failed" in response_text:
-                status_header = f"𝘾𝙇𝙊𝙐𝘿𝙁𝙇𝘼𝙍𝙀 𝙎𝙋𝙊𝙏𝙏𝙀𝘿 {emoji_id}" if emoji_id else "𝘾𝙇𝙊𝙐𝘿𝙁𝙇𝘼𝙍𝙀 𝙎𝙋𝙊𝙏𝙏𝙀𝘿 ⚠️"
-                result["Response"] = "Cloudflare spotted 🤡 change site or try again"
-
-            elif "thank you" in response_text or "payment successful" in response_text:
-                status_header = f"𝘾𝙃𝘼𝙍𝙂𝙀𝘿 {emoji_id}" if emoji_id else "𝘾𝙃𝘼𝙍𝙂𝙀𝘿 💎"
-                status_result = "Charged"
-                is_charged = True
-                await save_approved_card(card, status_result, result.get('Response'), result.get('Gateway'), result.get('Price'))
-
-            elif any(key in response_text for key in ["invalid_cvv", "incorrect_cvv", "insufficient_funds", "approved", "success", "invalid_cvc", "incorrect_cvc", "incorrect_zip", "insufficient funds"]):
-                status_header = f"𝘼𝙋𝙋𝙍𝙊𝙑𝙀𝘿 {emoji_id}" if emoji_id else "𝘼𝙋𝙋𝙍𝙊𝙑𝙀𝘿 ✅"
-                status_result = "Approved"
+            if "charged" in response_text or "order completed" in response_text or "💎" in response_text:
+                charged += 1
+                status = "CHARGED 💎"
+                await save_approved_card(card, "CHARGED", result.get('Response'), result.get('Gateway'), result.get('Price'))
+            elif "approved" in response_text or "success" in response_text or "thank you" in response_text:
+                approved += 1
+                status = "APPROVED ✅"
                 await save_approved_card(card, "APPROVED", result.get('Response'), result.get('Gateway'), result.get('Price'))
-
             else:
-                status_header = f"~~ 𝘿𝙀𝘾𝙇𝙄𝙉𝙀𝘿 {emoji_id} ~~ ❌" if emoji_id else "~~ 𝘿𝙀𝘾𝙇𝙄𝙉𝙀𝘿 ~~ ❌"
-                status_result = "Declined"
+                declined += 1
+                status = "DECLINED ❌"
 
-            card_msg = f"""{status_header}
+            brand, btype, level, bank, country, flag = await get_bin_info(card.split("|")[0][:6])
 
+            msg = f"""
+{status}
 𝗖𝗖 ⇾ `{card}`
-𝗚𝗮𝘁𝗲𝙬𝙖𝙮 ⇾ {result.get('Gateway', 'Unknown')}
-𝗥𝗲𝙨𝙥𝙤𝙣𝙨𝗲 ⇾ {result.get('Response')}
-𝗣𝗿𝗶𝗰𝗲 ⇾ {result.get('Price')} 💸
-𝗦𝗶𝘁𝗲 ⇾ {current_site_index + 1}
+𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ⇾ {result.get('Gateway', 'Shopify')}
+𝗥𝗲𝙨𝙥𝙤𝙣𝙨𝗲 ⇾ {result.get('Response', 'No response')}
+𝗣𝗿𝗶𝗰𝗲 ⇾ {result.get('Price', '-')}
+𝗦𝗶𝘁𝗲 ⇾ {site}
+BIN: {brand} - {btype} - {level} | {bank} | {country} {flag}
+"""
+            await event.reply(msg)
 
-```𝗕𝗜𝗡 𝗜𝗻𝗳𝗼: {brand} - {bin_type} - {level}
-𝗕𝗮𝗻𝗸: {bank}
-𝗖𝗼𝘂𝗻𝘁𝗿𝘆: {country} {flag}```
+        except Exception as e:
+            declined += 1
+            await event.reply(f"❌ Error on {card}: {str(e)[:100]}")
 
-𝗧𝗼𝗼𝙠 {elapsed_time} 𝘀𝗲𝗰𝗼𝗻𝗱𝙨 🔥"""
+        await asyncio.sleep(1.2)  # anti-flood
 
-            # ─── Send with custom emoji entity for animated premium look ────────
-            entities = None
-            if emoji_id and emoji_id in card_msg:
-                offset = card_msg.find(emoji_id)
-                if offset != -1:
-                    entities = [MessageEntityCustomEmoji(
-                        offset=offset,
-                        length=len(emoji_id),
-                        document_id=int(emoji_id)
-                    )]
+        # Update progress
+        await status_msg.edit(
+            f"🔥 Cooking progress: {i}/{len(cards)}\n"
+            f"💎 Charged: {charged}\n"
+            f"✅ Approved: {approved}\n"
+            f"❌ Declined: {declined}"
+        )
 
-            result_msg = await event.reply(
-                card_msg,
-                formatting_entities=entities
-            )
-
-            if is_charged:
-                await pin_charged_message(event, result_msg)
-
-            await asyncio.sleep(0.2)  # small delay between replies (anti-flood)
-
-    # Final finish message with cooking complete vibe
-    await sent_msg.edit(
-        f"✅ 𝙁𝙞𝙣𝙞𝙨𝙝𝙚𝙙 𝘾𝙤𝙤𝙠𝙞𝙣𝙜!\n"
-        f"𝙏𝙤𝙩𝙖𝙡 𝙘𝙖𝙧𝙙𝙨 𝙥𝙧𝙤𝙘𝙚𝙨𝙨𝙚𝙙: {len(cards)}\n"
-        f"𝙁𝙞𝙧𝙚 𝙬𝙖𝙨 𝙡𝙞𝙩 🔥"
+    await status_msg.edit(
+        f"✅ Finished!\n"
+        f"Total cards: {len(cards)}\n"
+        f"💎 Charged: {charged}\n"
+        f"✅ Approved: {approved}\n"
+        f"❌ Declined: {declined}"
     )
 
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]broadcast ?(.*)'))
 async def broadcast_command(event):
-    if event.sender_id not in ADMIN_ID:
+    if not await is_admin(event.sender_id):
         return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣𝙨 𝙘𝙖𝙣 𝙪𝙨𝙚 𝙗𝙧𝙤𝙖𝙙𝙘𝙖𝙨𝙩!")
 
     # ─── Collect ALL unique users ───────────────────────────────────────────────
     all_users = set()
-
-    # Premium users
     premium = await load_json(PREMIUM_FILE)
     all_users.update(int(uid) for uid in premium)
-
-    # Free users (if tracked)
     free = await load_json(FREE_FILE)
     all_users.update(int(uid) for uid in free)
-
-    # Users with saved sites
     sites_data = await load_json(SITE_FILE)
     all_users.update(int(uid) for uid in sites_data)
-
-    # Banned users (good for sending unban/reminder messages)
     banned = await load_json(BANNED_FILE)
     all_users.update(int(uid) for uid in banned)
 
     if not all_users:
-        return await event.reply("❌ No users found in database to broadcast to!")
+        return await event.reply("❌ No users found in database!")
 
     total_users = len(all_users)
-    await event.reply(f"🚀 Starting broadcast to **{total_users:,}** users...")
+    user_list = list(all_users)
+
+    # ─── Prepare message to broadcast ───────────────────────────────────────────
+    if event.reply_to_msg_id:
+        replied = await event.get_reply_message()
+        message_content = replied  # full message object (text/photo/video/etc)
+        is_forward = True
+    else:
+        broadcast_text = event.pattern_match.group(1).strip()
+        if not broadcast_text:
+            return await event.reply("Reply to a message OR write text after /broadcast")
+        message_content = broadcast_text
+        is_forward = False
+
+    # ─── Start broadcast ────────────────────────────────────────────────────────
+    status_msg = await event.reply(
+        f"🚀 **Broadcast started**\n"
+        f"Total users: {total_users:,}\n"
+        f"Preparing... 0%"
+    )
 
     success = 0
     failed = 0
     blocked = 0
     flood = 0
 
-    # Optional: add random premium emoji to progress message
-    progress_emoji = await get_random_premium_emoji_id(event.sender_id) or "📤"
-    status_msg = await event.reply(f"{progress_emoji} Progress: 0/{total_users:,} | Success: 0 | Failed: 0")
-
-    # Decide what to broadcast
-    if event.reply_to_msg_id:
-        replied = await event.get_reply_message()
-        message_to_send = replied  # forward exact message (photo/video/text/media)
-    else:
-        broadcast_text = event.pattern_match.group(1).strip()
-        if not broadcast_text:
-            return await event.reply("Reply to a message or write text after /broadcast")
-        message_to_send = broadcast_text
-
-    user_list = list(all_users)  # copy to avoid runtime modification issues
-
     for idx, user_id in enumerate(user_list, 1):
         try:
-            if isinstance(message_to_send, str):
-                await client.send_message(user_id, message_to_send)
+            if is_forward:
+                await client.forward_messages(user_id, message_content)
             else:
-                await client.forward_messages(user_id, message_to_send)
+                await client.send_message(user_id, message_content)
 
             success += 1
 
         except telethon.errors.FloodWaitError as e:
             flood += 1
-            await asyncio.sleep(min(e.seconds + 2, 60))  # cap wait at 60s
+            await asyncio.sleep(min(e.seconds + 3, 120))
 
-        except telethon.errors.UserIsBlockedError:
+        except (telethon.errors.UserIsBlockedError, telethon.errors.ChatWriteForbiddenError):
             blocked += 1
-            # You can optionally remove from DB here if wanted
-            # await unban_user(user_id)  # or keep for stats
-
-        except telethon.errors.ChatWriteForbiddenError:
-            blocked += 1  # user restricted bot
 
         except Exception as e:
             failed += 1
             print(f"Broadcast failed for {user_id}: {str(e)}")
 
-        # Update progress every 5 users or at end (faster feel)
+        # Update progress every 5 users or at end
         if idx % 5 == 0 or idx == total_users:
-            current_emoji = await get_random_premium_emoji_id(event.sender_id) or "📤"
-            progress_text = (
-                f"{current_emoji} Broadcast progress:\n"
-                f"Total: {total_users:,}\n"
+            percent = round((idx / total_users) * 100, 1)
+            await status_msg.edit(
+                f"🚀 **Broadcast in progress**\n"
+                f"Total: {total_users:,} users\n"
+                f"Progress: {idx:,}/{total_users:,} ({percent}%)\n"
                 f"✅ Sent: {success:,}\n"
                 f"❌ Failed: {failed:,}\n"
                 f"🚫 Blocked: {blocked:,}\n"
-                f"⏳ Flood waits: {flood:,}\n"
-                f"Done: {idx:,}/{total_users:,}"
+                f"⏳ Flood waits: {flood:,}"
             )
-            try:
-                await status_msg.edit(progress_text)
-            except:
-                pass  # silent fail if deleted
 
-        # Very light delay (anti-flood without slowing too much)
-        await asyncio.sleep(0.25)
+        await asyncio.sleep(0.4)  # safe anti-flood delay
 
-    # Final report with flair
-    final_emoji = await get_random_premium_emoji_id(event.sender_id) or "✅"
-    final_report = (
-        f"{final_emoji} **Broadcast finished!**\n\n"
-        f"Total users: **{total_users:,}**\n"
-        f"Successfully sent: **{success:,}**\n"
-        f"Failed: **{failed:,}**\n"
-        f"Blocked by user: **{blocked:,}**\n"
-        f"Flood waits encountered: **{flood:,}**"
-    )
+    # ─── Final beautiful report ─────────────────────────────────────────────────
+    final_report = f"""✅ **Broadcast Completed!**
+
+📊 **Statistics:**
+Total users targeted: **{total_users:,}**
+Successfully sent: **{success:,}**
+Failed: **{failed:,}**
+Blocked by user: **{blocked:,}**
+Flood waits encountered: **{flood:,}**
+
+Message type: {'Forwarded media/message' if is_forward else 'Text message'}
+"""
+    if success > 0:
+        final_report += "\nBroadcast finished successfully. 🔥"
+    else:
+        final_report += "\nNo messages were sent. Check logs."
 
     await status_msg.edit(final_report)
 
@@ -2409,7 +2453,7 @@ async def info(event):
 
 @client.on(events.NewMessage(pattern='/stats'))
 async def stats(event):
-    if event.sender_id not in ADMIN_ID:
+    if not await is_admin(event.sender_id):
         return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣 𝘾𝙖𝙣 𝙐𝙨𝙚 𝙏𝙝𝙞𝙨 𝘾𝙤𝙢𝙢𝙖𝙣𝙙!")
 
     try:
@@ -2542,271 +2586,131 @@ async def stats(event):
 
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]admins?$'))
 async def show_admins(event):
-    """
-    Shows list of all bot administrators with basic public info
-    Anyone can use this command
-    """
     if await is_banned_user(event.sender_id):
         return await event.reply(banned_user_message())
 
+    admins = await load_admins()
     admin_list = []
-    
-    for admin_id in ADMIN_ID:
+
+    for admin_id in admins:
         try:
-            # Try to get user entity
             user = await client.get_entity(admin_id)
-            
-            # Build nice display name
-            name = user.first_name or "Unknown"
-            if user.last_name:
-                name += f" {user.last_name}"
-            
+            name = f"{user.first_name or ''} {user.last_name or ''}".strip()
             username = f"@{user.username}" if user.username else "No username"
-            user_id = str(admin_id)
-            
-            # Premium status check (optional but nice)
-            premium_status = "💎 Premium" if await is_premium_user(admin_id) else "Regular"
-            
-            admin_list.append(
-                f"👑 **Admin**\n"
-                f"• Name: {name}\n"
-                f"• ID: `{user_id}`\n"
-                f"• Username: {username}\n"
-                f"• Status: {premium_status}\n"
-            )
-            
-        except Exception:
-            # If user is deleted / blocked / not found
-            admin_list.append(
-                f"👑 **Admin (ID not visible)**\n"
-                f"• ID: `{admin_id}`\n"
-                f"• Name: Hidden / Deleted\n"
-                f"• Contact via support\n"
-            )
-
-    if not admin_list:
-        return await event.reply("❌ No administrators configured (this should never happen)")
-
-    header = "┏━━━━━━━ **Bot Administrators** ━━━━━━━┓\n\n"
-    footer = "\n┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\nFor serious issues contact any admin above."
-
-    message = header + "\n".join(admin_list) + footer
-
-    # Add support contact at the end
-    message += "\n\n🆘 **Official Support:** @Dreadsync_2"
-
-    # If too many admins → send as file (rare case)
-    if len(message) > 4000:
-        filename = f"admins_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.txt"
-        async with aiofiles.open(filename, "w", encoding="utf-8") as f:
-            await f.write(message)
-        await event.reply("📋 Administrator list (long)", file=filename)
-        try:
-            os.remove(filename)
+            status = "👑 **Owner**" if admin_id == OWNER_ID else "⭐ **Admin**"
+            admin_list.append(f"{status}\n• ID: `{admin_id}`\n• Name: {name}\n• Username: {username}\n")
         except:
-            pass
-    else:
-        await event.reply(message, link_preview=False)
+            admin_list.append(f"⭐ **Admin**\n• ID: `{admin_id}`\n• Name: Unknown\n")
+
+    text = "┏━━━━━━ **Bot Administrators** ━━━━━━┓\n\n" + "\n".join(admin_list) + "\n┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\nFor serious issues contact @Dreadsync_2"
+    await event.reply(text)
 
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]ran$'))
 async def ranfor(event):
     can_access, access_type = await can_use(event.sender_id, event.chat)
-    if access_type == "banned": return await event.reply(banned_user_message())
+    if access_type == "banned":
+        return await event.reply(banned_user_message())
     if not can_access:
-        buttons = [[Button.url("𝙐𝙨𝙚 𝙄𝙣 𝙂𝙧𝙤𝙪𝙥 𝙁𝙧𝙚𝙚", f"https://t.me/+pNplrRLrEGY5NTU0")]]
-        return await event.reply("🚫 𝙐𝙣𝙖𝙪𝙩𝙝𝙤𝙧𝙞𝙨𝙚𝙙 𝘼𝙘𝙘𝙚𝙨𝙨!\n\n𝙔𝙤𝙪 𝙘𝙖𝙣 𝙪𝙨𝙚 𝙩𝙝𝙞𝙨 𝙗𝙤𝙩 𝙞𝙣 𝙜𝙧𝙤𝙪𝙥 𝙛𝙤𝙧 𝙛𝙧𝙚𝙚!\n\n𝙁𝙤𝙧 𝙥𝙧𝙞𝙫𝙖𝙩𝙚 𝙖𝙘𝙘𝙚𝙨𝙨, 𝙘𝙤𝙣𝙩𝙖𝙘𝙩 @Dreadsync_2", buttons=buttons)
-    
-    # Check if user has added proxy
+        buttons = [[Button.url("Join Group", "https://t.me/deebuchecked")]]
+        return await event.reply("🚫 Unauthorized! Join group for free.", buttons=buttons)
+
     proxy_data = await get_user_proxy(event.sender_id)
     if not proxy_data:
-        return await event.reply("⚠️ 𝙋𝙧𝙤𝙭𝙮 𝙍𝙚𝙦𝙪𝙞𝙧𝙚𝙙!\n\n𝙋𝙡𝙚𝙖𝙨𝙚 𝙖𝙙𝙙 𝙖 𝙥𝙧𝙤𝙭𝙮 𝙛𝙞𝙧𝙨𝙩 𝙪𝙨𝙞𝙣𝙜:\n`/addpxy ip:port:username:password`\n\n𝙊𝙧 𝙬𝙞𝙩𝙝𝙤𝙪𝙩 𝙖𝙪𝙩𝙝:\n`/addpxy ip:port`")
-    
-    user_id = event.sender_id
-    if user_id in ACTIVE_MTXT_PROCESSES: return await event.reply("```𝙔𝙤𝙪𝙧 𝘾𝘾 is 𝙖𝙡𝙧𝙚𝙖𝙙𝙮 𝘾𝙤𝙤𝙠𝙞𝙣𝙜 🍳 𝙬𝙖𝙞𝙩 𝙛𝙤𝙧 𝙘𝙤𝙢𝙥𝙡𝙚𝙩𝙚```")
-    try:
-        if not event.reply_to_msg_id: return await event.reply("```𝙋𝙡𝙚𝙖𝙨𝙚 𝙧𝙚𝙥𝙡𝙮 𝙩𝙤 𝙖 𝙙𝙤𝙘𝙪𝙢𝙚𝙣𝙩 𝙢𝙚𝙨𝙨𝙖𝙜𝙚 𝙬𝙞𝙩𝙝 /𝙧𝙖𝙣```")
-        replied_msg = await event.get_reply_message()
-        if not replied_msg or not replied_msg.document: return await event.reply("```𝙋𝙡𝙚𝙖𝙨𝙚 𝙧𝙚𝙥𝙡𝙮 𝙩𝙤 𝙖 𝙙𝙤𝙘𝙪𝙢𝙚𝙣𝙩 𝙢𝙚𝙨𝙨𝙖𝙜𝙚 𝙬𝙞𝙩𝙝 /𝙧𝙖𝙣```")
-        
-        # Load sites from sites.txt
-        if not os.path.exists('sites.txt'):
-            return await event.reply("❌ 𝙎𝙞𝙩𝙚𝙨 𝙛𝙞𝙡𝙚 𝙣𝙤𝙩 𝙛𝙤𝙪𝙣𝙙! 𝘾𝙤𝙣𝙩𝙖𝙘𝙩 𝙖𝙙𝙢𝙞𝙣.")
-        
-        async with aiofiles.open('sites.txt', 'r') as f:
-            sites_content = await f.read()
-            global_sites = [line.strip() for line in sites_content.splitlines() if line.strip()]
-        
-        if not global_sites:
-            return await event.reply("❌ 𝙉𝙤 𝙨𝙞𝙩𝙚𝙨 𝙖𝙫𝙖𝙞𝙡𝙖𝙗𝙡𝙚 𝙞𝙣 𝙨𝙞𝙩𝙚𝙨.𝙩𝙭𝙩! 𝘾𝙤𝙣𝙩𝙖𝙘𝙩 𝙖𝙙𝙢𝙞𝙣.")
-        
-        file_path = await replied_msg.download_media()
-        try:
-            async with aiofiles.open(file_path, "r") as f: lines = (await f.read()).splitlines()
-            os.remove(file_path)
-        except Exception as e:
-            try: os.remove(file_path)
-            except: pass
-            return await event.reply(f"❌ 𝙀𝙧𝙧𝙤𝙧 𝙧𝙚𝙖𝙙𝙞𝙣𝙜 𝙛𝙞𝙡𝙚: {e}")
-        cards = [line for line in lines if re.match(r'\d{12,16}\|\d{1,2}\|\d{2,4}\|\d{3,4}', line)]
-        if not cards: return await event.reply("𝘼𝙣𝙮 𝙑𝙖𝙡𝙞𝙙 𝘾𝘾 𝙣𝙤𝙩 𝙁𝙤𝙪𝙣𝙙 🥲")
-        cc_limit = get_cc_limit(access_type, user_id)
-        total_cards_found = len(cards)
-        if len(cards) > cc_limit:
-            cards = cards[:cc_limit]
-            await event.reply(f"""```📝 𝙁𝙤𝙪𝙣𝙙 {total_cards_found} 𝘾𝘾𝙨 𝙞𝙣 𝙛𝙞𝙡𝙚
-⚠️ 𝙋𝙧𝙤𝙘𝙚𝙨𝙨𝙞𝙣𝙜 𝙤𝙣𝙡𝙮 𝙛𝙞𝙧𝙨𝙩 {cc_limit} 𝘾𝘾𝙨 (𝙮𝙤𝙪𝙧 𝙡𝙞𝙢𝙞𝙩)
-🔥 {len(cards)} 𝘾𝘾𝙨 𝙬𝙞𝙡𝙡 𝙗𝙚 𝙘𝙝𝙚𝙘𝙠𝙚𝙙```""")
-        else: await event.reply(f"""```📝 𝙁𝙤𝙪𝙣𝙙 {total_cards_found} 𝙫𝙖𝙡𝙞𝙙 𝘾𝘾𝙨 𝙞𝙣 𝙛𝙞𝙡𝙚
-🔥 𝘼𝙡𝙡 {len(cards)} 𝘾𝘾𝙨 𝙬𝙞𝙡𝙡 𝙗𝙚 𝙘𝙝𝙚𝙘𝙠𝙚𝙙```""")
-        
-        ACTIVE_MTXT_PROCESSES[user_id] = True
-        asyncio.create_task(process_ranfor_cards(event, cards, global_sites.copy()))
-    except Exception as e:
-        ACTIVE_MTXT_PROCESSES.pop(user_id, None)
-        await event.reply(f"❌ 𝙀𝙧𝙧𝙤𝙧: {e}")
+        return await event.reply("⚠️ Proxy required! Use /addpxy first.")
 
-async def process_ranfor_cards(event, cards, global_sites):
-    # Get username
+    if not event.reply_to_msg_id:
+        return await event.reply("Reply to .txt file with /ran")
+
+    replied = await event.get_reply_message()
+    if not replied.document or not replied.file.name.lower().endswith('.txt'):
+        return await event.reply("Reply to a .txt file containing cards")
+
+    file_path = await replied.download_media()
     try:
-        sender = await event.get_sender()
-        username = sender.username if sender.username else f"user_{event.sender_id}"
+        async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = await f.readlines()
+        os.remove(file_path)
     except:
-        username = f"user_{event.sender_id}"
-    
-    user_id = event.sender_id
-    total = len(cards)
-    checked, approved, charged, declined = 0, 0, 0, 0
-    status_msg = await event.reply(f"```𝙎𝙤మె𝙩𝙝𝙞𝙣𝙜 𝘽𝙞𝙜 𝘾𝙤𝙤𝙠𝙞𝙣𝙜 🍳```")
+        return await event.reply("File read error.")
 
-    try:
-        batch_size = 20
-        for i in range(0, len(cards), batch_size):
-            if not global_sites:
-                await status_msg.edit("❌ **All sites are dead!**\nPlease contact admin to add fresh sites.")
-                break
+    cards = [line.strip() for line in lines if re.match(r'^\d{16}\|\d{2}\|\d{2}\|\d{3,4}$', line.strip())]
+    if not cards:
+        return await event.reply("No valid cards found in file.")
 
-            batch = cards[i:i+batch_size]
-            tasks = []
-            task_cards = []
+    cc_limit = get_cc_limit(access_type, event.sender_id)
+    if len(cards) > cc_limit:
+        cards = cards[:cc_limit]
 
-            if user_id not in ACTIVE_MTXT_PROCESSES:
-                final_caption = f"""⛔ 𝘾𝙝𝙚𝙘𝙠𝙞𝙣𝙜 𝙎𝙩𝙤𝙥𝙥𝙚𝙙!
-𝙏𝙤𝙩𝙖𝙡 𝘾𝙃𝘼𝙍𝙂𝙀 💎 : {charged}
-𝙏𝙤𝙩𝙖𝙡 𝘼𝙥𝙥𝙧𝙤𝙫𝙚 🔥 : {approved}
-𝙏𝙤𝙩𝙖𝙡 𝘿𝙚𝙘𝙡𝙞𝙣𝙚 ❌ : {declined}
-𝙏𝙤𝙩𝙖𝙡 𝘾𝙝𝙚𝙘𝙠𝙚𝙙 ☠️ : {checked}/{total}
-"""
-                final_buttons = [[Button.inline(f"𝘾𝙃𝘼𝙍𝙂𝙀 ➜ [ {charged} ] 💎", b"none")], [Button.inline(f"𝘼𝙥𝙥𝙧𝙤𝙫𝙚 ➜ [ {approved} ] 🔥", b"none")], [Button.inline(f"𝙎𝙩𝙤𝙥 ➜ [{checked}/{total}] ⛔", b"none")]]
-                try: await status_msg.edit(final_caption, buttons=final_buttons)
-                except: pass
-                return
+    if not os.path.exists('sites.txt'):
+        return await event.reply("sites.txt not found! Contact admin.")
 
-            for card in batch:
-                if user_id not in ACTIVE_MTXT_PROCESSES or not global_sites:
-                    break
-                current_site = random.choice(global_sites)
-                tasks.append(check_card_with_retries_ranfor(card, current_site, user_id, global_sites))
-                task_cards.append((card, current_site))
-            
-            if not tasks: continue
+    async with aiofiles.open('sites.txt', 'r') as f:
+        sites = [line.strip() for line in await f.readlines() if line.strip()]
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+    if not sites:
+        return await event.reply("No sites in sites.txt! Contact admin.")
 
-            for j, (result, (card, site_used)) in enumerate(zip(results, task_cards)):
-                if user_id not in ACTIVE_MTXT_PROCESSES: break
+    await process_ranfor_cards(event, cards, sites)
 
-                if isinstance(result, Exception):
-                    result = {"Response": f"Exception: {str(result)}", "Price": "-", "Gateway": "-"}
 
-                checked += 1
-                start_time = time.time()
-                end_time = time.time()
-                elapsed_time = round(end_time - start_time, 2)
-                
-                response_text = result.get("Response", "")
-                response_text_lower = response_text.lower()
+async def process_ranfor_cards(event, cards, sites):
+    status_msg = await event.reply(f"🔥 Cooking {len(cards)} cards from file using random sites...")
 
-                if is_site_dead(response_text):
-                    declined += 1
-                    # Don't remove sites from global_sites list for /ran command
-                    # Sites in sites.txt should remain unchanged
-                    continue
+    charged = 0
+    approved = 0
+    declined = 0
 
-                if "3d" in response_text_lower:
-                    declined += 1
-                    continue
+    for i, card in enumerate(cards, 1):
+        site = random.choice(sites)
+        try:
+            result = await check_card_specific_site(card, site, event.sender_id)
+            response_text = result.get("Response", "").lower()
 
-                brand, bin_type, level, bank, country, flag = await get_bin_info(card.split("|")[0])
-                should_send_message = False
+            if "charged" in response_text or "order completed" in response_text or "💎" in response_text:
+                charged += 1
+                status = "CHARGED 💎"
+                await save_approved_card(card, "CHARGED", result.get('Response'), result.get('Gateway'), result.get('Price'))
+            elif "approved" in response_text or "success" in response_text or "thank you" in response_text:
+                approved += 1
+                status = "APPROVED ✅"
+                await save_approved_card(card, "APPROVED", result.get('Response'), result.get('Gateway'), result.get('Price'))
+            else:
+                declined += 1
+                status = "DECLINED ❌"
 
-                status_text_lower = result.get("Status", "").lower()
-                
-                # Check for charged status
-                if "charged" in response_text_lower or "charged" in status_text_lower:
-                    charged += 1
-                    status_header = "𝘾𝙃𝘼𝙍𝙂𝙀𝘿 💎"
-                    await save_approved_card(card, "CHARGED", result.get('Response'), result.get('Gateway'), result.get('Price'))
-                    should_send_message = True
-                elif "cloudflare bypass failed" in response_text_lower:
-                    status_header = "𝘾𝙇𝙊𝙐𝘿𝙁𝙇𝘼𝙍𝙀 𝙎𝙋𝙊𝙏𝙏𝙀𝘿 ⚠️"
-                    result["Response"] = "Cloudflare spotted 🤡 change site or try again"
-                    checked -= 1
-                elif "thank you" in response_text_lower or "payment successful" in response_text_lower:
-                    charged += 1
-                    status_header = "𝘾𝙃𝘼𝙍𝙂𝙀𝘿 💎"
-                    await save_approved_card(card, "CHARGED", result.get('Response'), result.get('Gateway'), result.get('Price'))
-                    should_send_message = True
-                elif any(key in response_text_lower for key in ["invalid_cvv", "incorrect_cvv", "insufficient_funds", "approved", "success", "invalid_cvc", "incorrect_cvc", "incorrect_zip", "insufficient funds"]):
-                    approved += 1
-                    status_header = "𝘼𝙋𝙋𝙍𝙊𝙑𝙀𝘿 ✅"
-                    await save_approved_card(card, "APPROVED", result.get('Response'), result.get('Gateway'), result.get('Price'))
-                    should_send_message = True
-                else:
-                    declined += 1
-                    status_header = "~~ 𝘿𝙀𝘾𝙇𝙄𝙉𝙀𝘿 ~~ ❌"
+            brand, btype, level, bank, country, flag = await get_bin_info(card.split("|")[0][:6])
 
-                if should_send_message:
-                    card_msg = f"""{status_header}
-
+            msg = f"""
+{status}
 𝗖𝗖 ⇾ `{card}`
-𝗚𝗮𝘁𝗲𝙬𝙖𝙮 ⇾ {result.get('Gateway', 'Unknown')}
-𝗥𝗲𝙨𝙥𝙤𝙣𝙨𝗲 ⇾ {result.get('Response')}
-��𝗶𝗰𝗲 ⇾ {result.get('Price')} 💸
-
-```𝗕𝗜𝗡 𝗜𝗻𝗳𝗼: {brand} - {bin_type} - {level}
-𝗕𝗮𝗻𝗸: {bank}
-𝗖𝗼𝘂𝗻𝘁𝗿𝘆: {country} {flag}```
-
-𝗧𝗼𝗼𝙠 {elapsed_time} 𝘀𝗲𝗰𝗼𝗻𝗱𝙨
+𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ⇾ {result.get('Gateway', 'Shopify')}
+𝗥𝗲𝙨𝙥𝙤𝙣𝙨𝗲 ⇾ {result.get('Response', 'No response')}
+𝗣𝗿𝗶𝗰𝗲 ⇾ {result.get('Price', '-')}
+𝗦𝗶𝘁𝗲 ⇾ {site}
+BIN: {brand} - {btype} - {level} | {bank} | {country} {flag}
 """
-                    result_msg = await event.reply(card_msg)
-                    # Pin if charged
-                    if "charged" in response_text_lower or "charged" in status_text_lower or "thank you" in response_text_lower or "payment successful" in response_text_lower:
-                        await pin_charged_message(event, result_msg)
-                
-                buttons = [
-                    [Button.inline(f"𝗖𝗮𝗿𝗱 ➜ {card[:12]}****", b"none")],
-                    [Button.inline(f"𝗥𝗲𝘀𝗽𝗼𝗻𝘀𝗲 ➜ {result.get('Response')[:25]}...", b"none")],
-                    [Button.inline(f"𝘾𝙃𝘼𝙍𝙂𝙀 ➜ [ {charged} ] 💎", b"none")],
-                    [Button.inline(f"𝘼𝙥𝙥𝙧𝙤𝙫𝙚 ➜ [ {approved} ] 🔥", b"none")],
-                    [Button.inline(f"𝘿𝙚𝙘𝙡𝙞𝙣𝙚 ➜ [ {declined} ] ❌", b"none")],
-                    [Button.inline(f"𝙋𝙧𝙤𝙜𝙧𝙚𝙨𝙨 ➜ [{checked}/{total}] ✅", b"none")],
-                    [Button.inline("⛔ 𝙎𝙩𝙤𝙥", f"stop_ranfor:{user_id}".encode())]
-                ]
-                try: await status_msg.edit("```𝘾𝙤𝙤𝙠𝙞𝙣𝙜 🍳 𝘾𝘾𝙨 𝙊𝙣𝙚 𝙗𝙮 𝙊𝙣𝙚...```", buttons=buttons)
-                except: pass
-                await asyncio.sleep(0.1)
+            await event.reply(msg)
 
-        final_caption = f"""✅ 𝘾𝙝𝙚𝙘𝙠𝙞𝙣𝙜 𝘾𝙤𝙢𝙥𝙡𝙚𝙩𝙚!
-𝙏𝙤𝙩𝙖𝙡 𝘾𝙃𝘼𝙍𝙂𝙀 💎 : {charged}
-𝙏𝙤𝙩𝙖𝙡 𝘼𝙥𝙥𝙧𝙤𝙫𝙚 🔥 : {approved}
-𝙏𝙤𝙩𝙖𝙡 𝘿𝙚𝙘𝙡𝙞𝙣𝙚 ❌ : {declined}
-𝙏𝙤𝙩𝙖𝙡 𝘾𝙝𝙚𝙘𝙠𝙚𝙙 ☠️ : {total}
-"""
-        final_buttons = [[Button.inline(f"𝘾𝙃𝘼𝙍𝙂𝙀 ➜ [ {charged} ] 💎", b"none")], [Button.inline(f"𝘼𝙥𝙥𝙧𝙤𝙫𝙚 ➜ [ {approved} ] 🔥", b"none")], [Button.inline(f"𝙏𝙤𝙩𝙖𝙡 ➜ [{total}] ☠️", b"none")], [Button.inline(f"𝙏𝙤𝙩𝙖𝙡 𝘾𝙝𝙚𝙘𝙠𝙚𝙙 ➜ [{checked}/{total}] ✅", b"none")]]
-        try: await status_msg.edit(final_caption, buttons=final_buttons)
-        except: pass
-    finally: ACTIVE_MTXT_PROCESSES.pop(user_id, None)
+        except Exception as e:
+            declined += 1
+            await event.reply(f"❌ Error on {card}: {str(e)[:100]}")
+
+        await asyncio.sleep(1.5)
+
+        await status_msg.edit(
+            f"Progress: {i}/{len(cards)}\n"
+            f"💎 Charged: {charged}\n"
+            f"✅ Approved: {approved}\n"
+            f"❌ Declined: {declined}"
+        )
+
+    await status_msg.edit(
+        f"✅ Finished!\n"
+        f"Total: {len(cards)}\n"
+        f"💎 Charged: {charged}\n"
+        f"✅ Approved: {approved}\n"
+        f"❌ Declined: {declined}"
+    )
 
 async def check_card_with_retries_ranfor(card, site, user_id, global_sites, max_retries=3):
     """Check a card with automatic retry up to max_retries times on site errors"""
@@ -3175,7 +3079,7 @@ async def add_working_sites_callback(event):
 
 @client.on(events.NewMessage(pattern='/unauth'))
 async def unauth_user(event):
-    if event.sender_id not in ADMIN_ID:
+    if not await is_admin(event.sender_id):
         return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣 𝘾𝙖𝙣 𝙐𝙨𝙚 𝙏𝙝𝙞𝙨 𝘾𝙤𝙢𝙢𝙖𝙣𝙙!")
 
     try:
@@ -3207,7 +3111,7 @@ async def unauth_user(event):
 
 @client.on(events.NewMessage(pattern='/ban'))
 async def ban_user_command(event):
-    if event.sender_id not in ADMIN_ID:
+    if not await is_admin(event.sender_id):
         return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣 𝘾𝙖𝙣 𝙐𝙨𝙚 𝙏𝙝𝙞𝙨 𝘾𝙤𝙢𝙢𝙖𝙣𝙙!")
 
     try:
@@ -3237,7 +3141,7 @@ async def ban_user_command(event):
 
 @client.on(events.NewMessage(pattern='/unban'))
 async def unban_user_command(event):
-    if event.sender_id not in ADMIN_ID:
+    if not await is_admin(event.sender_id):
         return await event.reply("🚫 𝙊𝙣𝙡𝙮 𝘼𝙙𝙢𝙞𝙣 𝘾𝙖𝙣 𝙐𝙨𝙚 𝙏𝙝𝙞𝙨 𝘾𝙤𝙢𝙢𝙖𝙣𝙙!")
 
     try:
@@ -3269,7 +3173,7 @@ async def unban_user_command(event):
 
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]addprememoji\s+(\d+)'))
 async def add_premium_emoji(event):
-    if event.sender_id not in ADMIN_ID:
+    if not await is_admin(event.sender_id):
         return await event.reply("Sirf admin add kar sakte hain premium emoji ID")
     
     new_id = event.pattern_match.group(1).strip()
@@ -3278,6 +3182,14 @@ async def add_premium_emoji(event):
     
     PREMIUM_EMOJI_IDS.append(new_id)
     await event.reply(f"✅ New premium emoji ID added: {new_id}\nAb har charged/live message mein random lagega")
+
+async def initialize_files():
+    for file in [PREMIUM_FILE, FREE_FILE, SITE_FILE, KEYS_FILE, BANNED_FILE, PROXY_FILE, ADMIN_FILE]:
+        await create_json_file(file)
+    
+    # Initialize admin file with owner
+    admins = await load_admins()
+    await save_admins(admins)
 
 async def main():
     await initialize_files()
