@@ -972,9 +972,9 @@ async def add_site(event):
 
     raw_text = event.raw_text.strip().lower()
 
-    # Extra protection: if looks like proxy or admin command → reject early
+    # Extra safety: block if someone tries to use similar commands
     if any(x in raw_text for x in ['addadmin', 'rmadmin', 'addpxy', 'rmpxy', 'proxy']):
-        return await event.reply("🚫 Wrong command!\nUse /addadmin, /addpxy etc. separately")
+        return await event.reply("🚫 Wrong command!\nUse /addadmin, /addpxy etc. separately.")
 
     try:
         add_text = event.raw_text[4:].strip()  # skip /add or .add
