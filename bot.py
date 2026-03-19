@@ -964,7 +964,7 @@ Enjoy cooking 🔥"""
     except Exception as e:
         await event.reply(f"❌ 𝙀𝙧𝙧𝙤𝙧 𝙧𝙚𝙙𝙚𝙚𝙢𝙞𝙣𝙜 𝙠𝙚𝙮: {str(e)}")
 
-@client.on(events.NewMessage(pattern=r'(?i)^[/.]add(\s+|$)')))
+@client.on(events.NewMessage(pattern=r'(?i)^[/.]add(\s+|$)'))
 async def add_site(event):
     can_access, access_type = await can_use(event.sender_id, event.chat)
     if access_type == "banned":
@@ -972,12 +972,12 @@ async def add_site(event):
 
     raw_text = event.raw_text.strip().lower()
 
-    # Extra safety: block if someone tries to use similar commands
+    # Extra safety to prevent conflict with /addadmin, /addpxy etc.
     if any(x in raw_text for x in ['addadmin', 'rmadmin', 'addpxy', 'rmpxy', 'proxy']):
         return await event.reply("🚫 Wrong command!\nUse /addadmin, /addpxy etc. separately.")
 
     try:
-        add_text = event.raw_text[4:].strip()  # skip /add or .add
+        add_text = event.raw_text[4:].strip()   # remove /add or .add
         if not add_text:
             return await event.reply(
                 "Format: `/add site.com shop.com https://example.com`\n\n"
