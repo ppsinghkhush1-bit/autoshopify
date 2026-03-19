@@ -55,6 +55,86 @@ stripe.api_key = STRIPE_KEYS[0]
 ACTIVE_MTXT_PROCESSES = {}
 TEMP_WORKING_SITES = {}
 
+@client.on(events.NewMessage(pattern=r'(?i)^[/.](start|cmds?|commands?)$'))
+async def start(event):
+    user_id = event.sender_id
+    chat = event.chat
+
+    if await is_banned_user(user_id):
+        return await event.reply(banned_user_message())
+
+    can_access, access_type = await can_use(user_id, chat)
+
+    # Get real-time limit
+    current_limit = await get_cc_limit(access_type, user_id)
+
+    # Premium status & expiry
+    premium_status = ""
+    if await is_premium_user(user_id):
+        premium_users = await load_json(PREMIUM_FILE)
+        data = premium_users.get(str(user_id), {})
+        if data:
+            expiry = datetime.datetime.fromisoformat(data['expiry'])
+            remaining = (expiry - datetime.datetime.now()).days
+            premium_status = f"💎 **Premium Active** | Expires in {remaining} days\n"
+    else:
+        premium_status = "🆓 **Free User**\n"
+
+    # Admin/Owner tag
+    role_tag = ""
+    if await is_owner(user_id):
+        role_tag = "👑 **Bot Owner**"
+    elif await is_admin(user_id):
+        role_tag = "⭐ **Bot Admin**"
+
+    # Main welcome text
+    text = f"""🍳 **CC Chef Bot – Welcome {role_tag}**
+
+{premium_status}
+**Your Current Limit:** {current_limit:,} CCs per check
+
+━━━━━━ **Main Gates** ━━━━━━
+**Shopify Auto-Charge**
+• `/sh` → Check single CC (random site)
+• `/msh` → Mass check from message (max {current_limit:,})
+• `/mtxt` → Check full .txt file (sequential sites)
+• `/ran` → Check using random sites from sites.txt
+
+**Stripe Auth / Low-Value Probe**
+• `/st` → Single Stripe auth check
+• `/mst` → Mass Stripe from text
+• `/mstxt` → Stripe auth from .txt file
+
+**BIN Tools**
+• `/gen [amount] [bin] [cvv?]` → Generate & check live cards
+  Examples:
+  • `/gen 411111` → 50 cards
+  • `/gen 100 545301` → 100 cards
+  • `/gen 30 434256 777` → 30 cards, fixed CVV 777
+
+━━━━━━ **Your Tools** ━━━━━━
+• `/add` → Add Shopify domains
+• `/rm` → Remove domains (or /rm dead, /rm all)
+• `/check` → Test your saved sites (auto-remove dead)
+• `/addpxy` → Add proxy (private only, max 10)
+• `/proxy` → List your proxies
+• `/rmpxy` → Remove proxy (number or all)
+• `/info` → Your account stats & limits
+• `/redeem <key>` → Activate premium key
+
+**Premium Benefits (private chat):**
+• Up to **4000+** cards per mass check
+• Higher rate limits & priority proxy rotation
+• Full private mass checking power
+
+Just type any command — bot will guide you if needed.
+Start cooking or get cooked 🔥
+
+Support: @Dreadsync_2 | Free group: https://t.me/deebuchecked
+"""
+
+    await event.reply(text, link_preview=False)
+
 # ==================== ADMIN FUNCTIONS ====================
 async def load_admins():
     try:
@@ -768,63 +848,6 @@ async def remove_admin(event):
         await event.reply("❌ Invalid User ID! Must be a number.")
     except Exception as e:
         await event.reply(f"❌ Error: {str(e)}")
-
-@client.on(events.NewMessage(pattern=r'(?i)^[/.](start|cmds?|commands?)$'))
-async def start(event):
-    _, access_type = await can_use(event.sender_id, event.chat)
-    if access_type == "banned":
-        return await event.reply(banned_user_message())
-
-    # Determine user status & limit
-    if access_type in ["premium_private", "premium_group"]:
-        status_line = f"💎 **Premium** → {get_cc_limit(access_type, event.sender_id):,} CCs per check"
-    else:
-        status_line = f"🆓 **Free/Group** → {get_cc_limit(access_type, event.sender_id):,} CCs per check"
-
-    text = f"""🚀 **Welcome to the CC Chef Bot** 🍳💳
-
-{status_line}
-
-**━━━━━━ Main Gates ━━━━━━**
-
-**Shopify Auto-Charge**
-`/sh`     → single CC (random site from your DB)
-`/msh`    → mass check CCs from message
-`/mtxt`   → check full .txt file (sequential sites)
-`/ran`    → random sites from sites.txt (file-based)
-
-**Stripe Auth / Low-Value Probe**
-`/st`     → single Stripe auth
-`/mst`    → mass Stripe from text
-`/mstxt`  → Stripe auth from .txt file
-
-**BIN → Generate + Check Live**
-`/gen`    → generate cards from BIN + live check via chkr.cc
-   Examples:
-   • `/gen 411111`               → 50 Visa cards
-   • `/gen 100 545301`           → 100 cards BIN 545301
-   • `/gen 30 434256 777`        → 30 cards, fixed CVV 777
-
-**Your Tools & Settings**
-`/add`      → add your Shopify domains
-`/rm`       → remove domains
-`/check`    → test your saved sites (auto-remove dead)
-`/addpxy`   → add proxy (private chat only, max 10)
-`/proxy`    → list your proxies
-`/rmpxy`    → remove proxy (number or all)
-`/info`     → your account stats & limits
-`/redeem`   → activate premium key
-
-Premium users get:
-• Private mass checks (up to 4000+ cards)
-• Higher rate limits
-• Priority on proxy rotation
-
-Just type any command — bot shows usage if needed.
-
-Start cooking or get left behind 🔥"""
-
-    await event.reply(text)
 
 @client.on(events.NewMessage(pattern='/auth'))
 async def auth_user(event):
