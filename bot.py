@@ -65,7 +65,7 @@ async def start(event):
 
     can_access, access_type = await can_use(user_id, chat)
 
-    # Get real current limit (async call)
+    # Get real current limit
     current_limit = await get_cc_limit(access_type, user_id)
 
     # Premium status + expiry
@@ -131,7 +131,6 @@ Support: @Dreadsync_2 | Free Group: https://t.me/deebuchecked
 """
 
     await event.reply(text, link_preview=False)
-
 # ==================== ADMIN FUNCTIONS ====================
 async def load_admins():
     try:
