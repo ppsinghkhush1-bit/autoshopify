@@ -64,8 +64,11 @@ async def start(event):
         return await event.reply(banned_user_message())
 
     can_access, access_type = await can_use(user_id, chat)
+
+    # Get real current limit
     current_limit = await get_cc_limit(access_type, user_id)
 
+    # Premium status + expiry
     premium_status = "🆓 **Free User**"
     if await is_premium_user(user_id):
         premium_users = await load_json(PREMIUM_FILE)
@@ -75,6 +78,7 @@ async def start(event):
             remaining = max(0, (expiry - datetime.datetime.now()).days)
             premium_status = f"💎 **Premium Active** | Expires in {remaining} days"
 
+    # Role tag
     role_tag = ""
     if await is_owner(user_id):
         role_tag = "👑 Bot Owner"
@@ -88,26 +92,42 @@ async def start(event):
 
 ━━━━━━ **Main Gates** ━━━━━━
 **Shopify Auto-Charge**
-• `/sh` → Single CC check
-• `/msh` → Mass check from message
-• `/mtxt` → Check full .txt file
-• `/ran` → Random sites from sites.txt
+• `/sh` → Single CC check (random site from your DB)
+• `/msh` → Mass check cards from message/reply
+• `/mtxt` → Check full .txt file (sequential sites)
+• `/ran` → Check cards using random sites from sites.txt
 
-**Stripe Auth**
-• `/st` → Single Stripe check
-• `/mst` → Mass Stripe from text
-• `/mstxt` → Stripe from .txt file
+**Stripe Auth / Low-Value Probe**
+• `/st` → Single Stripe auth check
+• `/mst` → Mass Stripe auth from text
+• `/mstxt` → Stripe auth from .txt file
 
 **BIN Tools**
-• `/gen [amount] [bin]` → Generate & check cards
+• `/gen [amount] [bin] [cvv?]` → Generate & live check cards
+  Examples:
+  • `/gen 411111` → 50 Visa cards
+  • `/gen 100 545301` → 100 cards with BIN 545301
+  • `/gen 30 434256 777` → 30 cards, fixed CVV 777
 
-**Tools**
-• `/add` → Add domains
-• `/addpxy` → Add proxy
-• `/info` → Your stats
+━━━━━━ **Your Tools** ━━━━━━
+• `/add` → Add your Shopify domains
+• `/rm` → Remove domains (/rm dead, /rm all, /rm 1)
+• `/check` → Test saved sites (auto-remove dead ones)
+• `/addpxy` → Add proxy (private only, max 10)
+• `/proxy` → List your proxies
+• `/rmpxy` → Remove proxy (by number or all)
+• `/info` → Your account stats & limits
+• `/redeem <key>` → Activate premium key
 
-Start cooking 🔥
-Support: @Dreadsync_2
+**Premium Perks (private chat only):**
+• Up to **4000+ cards** per mass check
+• Higher speed & priority proxy rotation
+• Full private power
+
+Type any command — bot guides you if needed.
+Start cooking or stay hungry 🍴
+
+Support: @Dreadsync_2 | Free Group: https://t.me/deebuchecked
 """
 
     await event.reply(text, link_preview=False)
