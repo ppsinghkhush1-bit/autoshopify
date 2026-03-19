@@ -1431,7 +1431,7 @@ def generate_card_from_bin(bin_str: str) -> str:
 
     return prefix[:-1] + str(check_digit)
 
-@client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)')))
+@client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)'))
 async def st_command(event):
     can_access, access_type = await can_use(event.sender_id, event.chat)
     if access_type == "banned":
@@ -1529,7 +1529,6 @@ async def st_command(event):
         await loading.edit("⏳ 𝙍𝙖𝙩𝙚 𝙡𝙞𝙢𝙞𝙩 — 𝙩𝙧𝙮 𝙖𝙜𝙖𝙞𝙣 𝙞𝙣 30𝙨")
     except Exception as e:
         await loading.edit(f"❌ 𝙀𝙧𝙧𝙤𝙧: {str(e)}")
-
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]mst'))
 async def mst_command(event):
     can_access, access_type = await can_use(event.sender_id, event.chat)
