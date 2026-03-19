@@ -65,72 +65,69 @@ async def start(event):
 
     can_access, access_type = await can_use(user_id, chat)
 
-    # Get real-time limit
+    # Get real current limit (async call)
     current_limit = await get_cc_limit(access_type, user_id)
 
-    # Premium status & expiry
-    premium_status = ""
+    # Premium status + expiry
+    premium_status = "🆓 **Free User**"
     if await is_premium_user(user_id):
         premium_users = await load_json(PREMIUM_FILE)
         data = premium_users.get(str(user_id), {})
         if data:
             expiry = datetime.datetime.fromisoformat(data['expiry'])
-            remaining = (expiry - datetime.datetime.now()).days
-            premium_status = f"💎 **Premium Active** | Expires in {remaining} days\n"
-    else:
-        premium_status = "🆓 **Free User**\n"
+            remaining = max(0, (expiry - datetime.datetime.now()).days)
+            premium_status = f"💎 **Premium Active** | Expires in {remaining} days"
 
-    # Admin/Owner tag
+    # Role tag
     role_tag = ""
     if await is_owner(user_id):
-        role_tag = "👑 **Bot Owner**"
+        role_tag = "👑 Bot Owner"
     elif await is_admin(user_id):
-        role_tag = "⭐ **Bot Admin**"
+        role_tag = "⭐ Bot Admin"
 
-    # Main welcome text
-    text = f"""🍳 **CC Chef Bot – Welcome {role_tag}**
+    text = f"""🍳 **CC Chef Bot – Welcome {role_tag or 'Chef'}** 🔥
 
 {premium_status}
 **Your Current Limit:** {current_limit:,} CCs per check
 
 ━━━━━━ **Main Gates** ━━━━━━
 **Shopify Auto-Charge**
-• `/sh` → Check single CC (random site)
-• `/msh` → Mass check from message (max {current_limit:,})
+• `/sh` → Single CC check (random site from your DB)
+• `/msh` → Mass check cards from message/reply
 • `/mtxt` → Check full .txt file (sequential sites)
-• `/ran` → Check using random sites from sites.txt
+• `/ran` → Check cards using random sites from sites.txt
 
 **Stripe Auth / Low-Value Probe**
 • `/st` → Single Stripe auth check
-• `/mst` → Mass Stripe from text
+• `/mst` → Mass Stripe auth from text
 • `/mstxt` → Stripe auth from .txt file
 
 **BIN Tools**
-• `/gen [amount] [bin] [cvv?]` → Generate & check live cards
+• `/gen [amount] [bin] [cvv?]` → Generate & live check cards
   Examples:
-  • `/gen 411111` → 50 cards
-  • `/gen 100 545301` → 100 cards
+  • `/gen 411111` → 50 Visa cards
+  • `/gen 100 545301` → 100 cards with BIN 545301
   • `/gen 30 434256 777` → 30 cards, fixed CVV 777
 
 ━━━━━━ **Your Tools** ━━━━━━
-• `/add` → Add Shopify domains
-• `/rm` → Remove domains (or /rm dead, /rm all)
-• `/check` → Test your saved sites (auto-remove dead)
+• `/add` → Add your Shopify domains
+• `/rm` → Remove domains (/rm dead, /rm all, /rm 1)
+• `/check` → Test saved sites (auto-remove dead ones)
 • `/addpxy` → Add proxy (private only, max 10)
 • `/proxy` → List your proxies
-• `/rmpxy` → Remove proxy (number or all)
+• `/rmpxy` → Remove proxy (by number or all)
 • `/info` → Your account stats & limits
 • `/redeem <key>` → Activate premium key
 
-**Premium Benefits (private chat):**
-• Up to **4000+** cards per mass check
-• Higher rate limits & priority proxy rotation
-• Full private mass checking power
+**Premium Perks (private chat only):**
+• Up to **4000+ cards** per mass check
+• Higher speed & priority proxy rotation
+• Full private power
 
-Just type any command — bot will guide you if needed.
-Start cooking or get cooked 🔥
+Type any command — bot guides you if needed.
+Start cooking or stay hungry 🍴
 
-Support: @Dreadsync_2 | Free group: https://t.me/deebuchecked
+Support: @Dreadsync_2 | Free Group: https://t.me/deebuchecked
 """
 
     await event.reply(text, link_preview=False)
@@ -967,7 +964,7 @@ Enjoy cooking 🔥"""
     except Exception as e:
         await event.reply(f"❌ 𝙀𝙧𝙧𝙤𝙧 𝙧𝙚𝙙𝙚𝙚𝙢𝙞𝙣𝙜 𝙠𝙚𝙮: {str(e)}")
 
-@client.on(events.NewMessage(pattern=r'(?i)^[/.]add'))
+@client.on(events.NewMessage(pattern=r'(?i)^[/.]add(\s+|$)')))
 async def add_site(event):
     can_access, access_type = await can_use(event.sender_id, event.chat)
     if access_type == "banned":
@@ -975,16 +972,12 @@ async def add_site(event):
 
     raw_text = event.raw_text.strip().lower()
 
-    # Block proxy-like input in /add (redirect or ignore silently)
-    if 'addpxy' in raw_text or re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', raw_text):
-        return await event.reply(
-            "🚫 Use /addpxy for proxies\n"
-            "/add is only for domains (shop.com etc.)\n"
-            "Try: `/addpxy 1.2.3.4:8080:user:pass`"
-        )
+    # Extra protection: if looks like proxy or admin command → reject early
+    if any(x in raw_text for x in ['addadmin', 'rmadmin', 'addpxy', 'rmpxy', 'proxy']):
+        return await event.reply("🚫 Wrong command!\nUse /addadmin, /addpxy etc. separately")
 
     try:
-        add_text = event.raw_text[4:].strip()  # skip /add
+        add_text = event.raw_text[4:].strip()  # skip /add or .add
         if not add_text:
             return await event.reply(
                 "Format: `/add site.com shop.com https://example.com`\n\n"
@@ -994,21 +987,17 @@ async def add_site(event):
 
         potential = extract_urls_from_text(add_text)
         sites_to_add = []
-
         for part in potential:
             normalized = normalize_domain(part)
             if not normalized:
                 continue
-
-            # Extra strict block for proxy/IP attempts
+            # Block proxy/IP attempts
             if (':' in normalized and normalized.count(':') > 1) or \
                re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$', normalized) or \
                normalized.startswith(('socks', 'http://', 'https://')):
-                continue  # silently ignore proxy-like junk
-
+                continue
             if '.' not in normalized or len(normalized.split('.')[-1]) < 2:
                 continue
-
             if normalized not in sites_to_add:
                 sites_to_add.append(normalized)
 
@@ -1025,10 +1014,8 @@ async def add_site(event):
 
         sites = await load_json(SITE_FILE)
         user_sites = sites.get(str(event.sender_id), [])
-
         added = []
         already = []
-
         for site in sites_to_add:
             if site in user_sites:
                 already.append(site)
@@ -1041,24 +1028,13 @@ async def add_site(event):
             await save_json(SITE_FILE, sites)
 
         parts = []
-
         if added:
-            parts.append(
-                f"✅ Added {len(added)} new site(s):\n" +
-                "\n".join(f"→ `{s}`" for s in added)
-            )
-
+            parts.append(f"✅ Added {len(added)} new site(s):\n" + "\n".join(f"→ `{s}`" for s in added))
         if already:
-            parts.append(
-                f"⚠️ Already in list ({len(already)}):\n" +
-                "\n".join(f"→ `{s}`" for s in already)
-            )
-
+            parts.append(f"⚠️ Already in list ({len(already)}):\n" + "\n".join(f"→ `{s}`" for s in already))
         if not parts:
             parts.append("No changes — all already saved")
-
         parts.append(f"\nTotal sites: {len(user_sites)}")
-
         await event.reply("\n\n".join(parts))
 
     except Exception as e:
