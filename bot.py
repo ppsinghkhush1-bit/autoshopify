@@ -459,72 +459,101 @@ def extract_urls_from_text(text):
         if cleaned_line and is_valid_url_or_domain(cleaned_line): clean_urls.add(cleaned_line)
     return list(clean_urls)
 
-def parse_proxy_format(proxy: str):
+def parse_proxy(proxy: str):
     proxy = proxy.strip()
-    proxy_type = "http"
 
-    # Extract protocol if present
-    protocol_match = re.match(r'^(socks5|socks4|http|https)://(.+)$', proxy, re.IGNORECASE)
-    if protocol_match:
-        proxy_type = protocol_match.group(1).lower()
-        proxy = protocol_match.group(2)
+    if not proxy:
+        return None
 
-    host = port = username = password = None
+    # -----------------------
+    # STEP 1: Detect scheme
+    # -----------------------
+    scheme = "http"
+    if "://" in proxy:
+        scheme, proxy = proxy.split("://", 1)
+        scheme = scheme.lower()
 
-    patterns = [
-        # username:password@host:port
-        r'^(?P<username>[^@:]+):(?P<password>[^@]+)@(?P<host>[^:@]+):(?P<port>\d+)$',
+    # -----------------------
+    # STEP 2: Normalize separators
+    # -----------------------
+    proxy = proxy.replace(" ", "")
+    
+    username = password = None
+    host = port = None
 
-        # host:port@username:password
-        r'^(?P<host>[a-zA-Z0-9\.\-]+):(?P<port>\d+)@(?P<username>[^:]+):(?P<password>.+)$',
+    # -----------------------
+    # STEP 3: Handle @ format
+    # -----------------------
+    if "@" in proxy:
+        left, right = proxy.split("@", 1)
 
-        # host:port:username:password
-        r'^(?P<host>[^:]+):(?P<port>\d+):(?P<username>[^:]+):(?P<password>.+)$',
+        # user:pass@host:port
+        if ":" in left:
+            username, password = left.split(":", 1)
 
         # host:port
-        r'^(?P<host>[^:@]+):(?P<port>\d+)$'
-    ]
+        if ":" in right:
+            host, port = right.split(":", 1)
 
-    for pattern in patterns:
-        match = re.match(pattern, proxy)
-        if match:
-            data = match.groupdict()
-            host = data.get("host")
-            port = data.get("port")
-            username = data.get("username")
-            password = data.get("password")
-            break
+    else:
+        parts = proxy.split(":")
 
+        # -----------------------
+        # STEP 4: Smart detection
+        # -----------------------
+
+        if len(parts) == 2:
+            # ip:port
+            host, port = parts
+
+        elif len(parts) == 3:
+            # could be:
+            # ip:port:user  OR user:pass@host (broken input)
+            if parts[1].isdigit():
+                host, port, username = parts
+            else:
+                username, password, host = parts
+
+        elif len(parts) >= 4:
+            # ip:port:user:pass OR any extended format
+            host = parts[0]
+            port = parts[1]
+            username = parts[2]
+            password = ":".join(parts[3:])  # keep colons in password
+
+    # -----------------------
+    # STEP 5: Validate
+    # -----------------------
     if not host or not port:
         return None
 
-    # Validate port
     try:
-        port_num = int(port)
-        if not (1 <= port_num <= 65535):
+        port = int(port)
+        if not (1 <= port <= 65535):
             return None
-    except ValueError:
+    except:
         return None
 
     # Normalize scheme
-    if proxy_type not in ["socks5", "socks4"]:
-        proxy_type = "http"
+    if scheme not in ["http", "https", "socks4", "socks5"]:
+        scheme = "http"
 
-    # Build URL
+    # -----------------------
+    # STEP 6: Build URL
+    # -----------------------
     if username and password:
-        proxy_url = f"{proxy_type}://{username}:{password}@{host}:{port}"
+        proxy_url = f"{scheme}://{username}:{password}@{host}:{port}"
     else:
-        proxy_url = f"{proxy_type}://{host}:{port}"
+        proxy_url = f"{scheme}://{host}:{port}"
 
     return {
         "ip": host,
-        "port": port,
+        "port": str(port),
         "username": username,
         "password": password,
         "proxy_url": proxy_url,
-        "type": proxy_type
+        "type": scheme
     }
-
 async def test_proxy(proxy_url):
     """Test if proxy is working"""
     try:
