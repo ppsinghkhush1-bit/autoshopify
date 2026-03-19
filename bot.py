@@ -461,33 +461,27 @@ def extract_urls_from_text(text):
 
 def parse_proxy(proxy: str):
     proxy = proxy.strip()
-
     if not proxy:
         return None
 
     # -----------------------
-    # STEP 1: Detect scheme
+    # STEP 1: Extract scheme
     # -----------------------
     scheme = "http"
     if "://" in proxy:
         scheme, proxy = proxy.split("://", 1)
         scheme = scheme.lower()
 
-    # -----------------------
-    # STEP 2: Normalize separators
-    # -----------------------
-    proxy = proxy.replace(" ", "")
-    
     username = password = None
     host = port = None
 
     # -----------------------
-    # STEP 3: Handle @ format
+    # STEP 2: Handle @ formats
     # -----------------------
     if "@" in proxy:
         left, right = proxy.split("@", 1)
 
-        # user:pass@host:port
+        # user:pass
         if ":" in left:
             username, password = left.split(":", 1)
 
@@ -499,7 +493,7 @@ def parse_proxy(proxy: str):
         parts = proxy.split(":")
 
         # -----------------------
-        # STEP 4: Smart detection
+        # STEP 3: Detect formats
         # -----------------------
 
         if len(parts) == 2:
@@ -507,19 +501,33 @@ def parse_proxy(proxy: str):
             host, port = parts
 
         elif len(parts) == 3:
-            # could be:
-            # ip:port:user  OR user:pass@host (broken input)
+            # ip:port:user  OR user:pass:host (rare messy input)
             if parts[1].isdigit():
                 host, port, username = parts
             else:
                 username, password, host = parts
 
         elif len(parts) >= 4:
-            # ip:port:user:pass OR any extended format
+            # ip:port:user:pass OR long password with :
             host = parts[0]
             port = parts[1]
             username = parts[2]
-            password = ":".join(parts[3:])  # keep colons in password
+            password = ":".join(parts[3:])
+
+    # -----------------------
+    # STEP 4: Fix special format
+    # socks4://ip:port:user:pass
+    # -----------------------
+    if not host or not port:
+        match = re.match(
+            r'^(?P<host>[^:]+):(?P<port>\d+):(?P<user>[^:]+):(?P<pass>.+)$',
+            proxy
+        )
+        if match:
+            host = match.group("host")
+            port = match.group("port")
+            username = match.group("user")
+            password = match.group("pass")
 
     # -----------------------
     # STEP 5: Validate
@@ -554,6 +562,7 @@ def parse_proxy(proxy: str):
         "proxy_url": proxy_url,
         "type": scheme
     }
+    
 async def test_proxy(proxy_url):
     """Test if proxy is working"""
     try:
