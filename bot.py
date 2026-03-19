@@ -1187,58 +1187,108 @@ async def add_proxy(event):
         await event.reply(f"❌ Error: {str(e)[:120]}")
 
 def parse_proxy_format(proxy: str) -> dict | None:
-    """Ultra-tolerant proxy parser – supports almost any real-world format"""
     proxy = proxy.strip()
-    proxy_type = 'http'  # default
+    if not proxy:
+        return None
 
-    # Remove any leading/trailing junk
-    proxy = re.sub(r'^[\[\(\{]*|[\]\)\}]*$', '', proxy).strip()
+    # -----------------------
+    # STEP 1: Clean junk
+    # -----------------------
+    proxy = re.sub(r'^[\[\(\{<\s]+|[\]\)\}>\s]+$', '', proxy)
 
-    # Detect protocol if present
-    protocol_match = re.match(r'^(socks5|socks4|http|https)://(.+)$', proxy, re.IGNORECASE)
-    if protocol_match:
-        proxy_type = protocol_match.group(1).lower()
-        proxy = protocol_match.group(2)
+    # -----------------------
+    # STEP 2: Detect scheme
+    # -----------------------
+    proxy_type = "http"
+    if "://" in proxy:
+        proxy_type, proxy = proxy.split("://", 1)
+        proxy_type = proxy_type.lower()
 
-    # Try to split auth@host:port
-    auth_host_port = proxy.split('@', 1)
-    if len(auth_host_port) == 2:
-        auth_part, host_port = auth_host_port
-        username, password = None, None
-        if ':' in auth_part:
-            username, password = auth_part.rsplit(':', 1)
+    username = password = None
+    host = port = None
+
+    # -----------------------
+    # STEP 3: Handle @ format
+    # user:pass@host:port
+    # -----------------------
+    if "@" in proxy:
+        auth, hostport = proxy.split("@", 1)
+
+        if ":" in auth:
+            username, password = auth.split(":", 1)
+
+        parts = hostport.split(":")
+        if len(parts) >= 2:
+            host = parts[0]
+            port = parts[1]
+
     else:
-        host_port = proxy
-        username = password = None
+        parts = proxy.split(":")
 
-    # Split host:port
-    if ':' in host_port:
-        parts = host_port.rsplit(':', 1)
-        host = parts[0].strip()
-        try:
-            port = int(parts[1].strip())
-            if not (1 <= port <= 65535):
-                return None
-        except:
-            return None
-    else:
-        return None  # no port found
+        # -----------------------
+        # STEP 4: Smart detection
+        # -----------------------
+        if len(parts) == 2:
+            # ip:port
+            host, port = parts
 
-    # Final validation
+        elif len(parts) == 3:
+            # ip:port:user OR weird
+            if parts[1].isdigit():
+                host, port, username = parts
+            else:
+                username, password, host = parts
+
+        elif len(parts) >= 4:
+            # ip:port:user:pass (IMPORTANT FIX)
+            host = parts[0]
+            port = parts[1]
+            username = parts[2]
+            password = ":".join(parts[3:])  # allow ":" in password
+
+    # -----------------------
+    # STEP 5: Fallback for socks4://ip:port:user:pass
+    # -----------------------
+    if (not host or not port) and re.match(r'.+:\d+:.+:.+', proxy):
+        parts = proxy.split(":")
+        if len(parts) >= 4:
+            host = parts[0]
+            port = parts[1]
+            username = parts[2]
+            password = ":".join(parts[3:])
+
+    # -----------------------
+    # STEP 6: Validate
+    # -----------------------
     if not host or not port:
         return None
 
-    # Build proxy_url
-    auth_str = f"{username}:{password}@" if username and password else ""
-    proxy_url = f"{proxy_type}://{auth_str}{host}:{port}"
+    try:
+        port = int(port)
+        if not (1 <= port <= 65535):
+            return None
+    except:
+        return None
+
+    # Normalize scheme
+    if proxy_type not in ["http", "https", "socks4", "socks5"]:
+        proxy_type = "http"
+
+    # -----------------------
+    # STEP 7: Build URL
+    # -----------------------
+    if username and password:
+        proxy_url = f"{proxy_type}://{username}:{password}@{host}:{port}"
+    else:
+        proxy_url = f"{proxy_type}://{host}:{port}"
 
     return {
-        'ip': host,
-        'port': str(port),
-        'username': username,
-        'password': password,
-        'proxy_url': proxy_url,
-        'type': proxy_type
+        "ip": host,
+        "port": str(port),
+        "username": username,
+        "password": password,
+        "proxy_url": proxy_url,
+        "type": proxy_type
     }
 
 @client.on(events.NewMessage(pattern='/rmpxy'))
