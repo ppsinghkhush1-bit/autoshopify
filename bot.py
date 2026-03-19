@@ -464,15 +464,21 @@ async def can_use(user_id, chat):
         else:
             return True, "group_free"
 
-def get_cc_limit(access_type, user_id=None):
-    # Check if user is admin first
+async def get_cc_limit(access_type, user_id=None):
+    """
+    Returns max CCs user can check at once.
+    Priority: Admin > Premium > Group Free > Others
+    """
     if user_id and await is_admin(user_id):
-        return 5000
+        return 5000          # Admins (incl. owner) get god mode
+
     if access_type in ["premium_private", "premium_group"]:
-        return 4000
-    elif access_type == "group_free":
-        return 500
-    return 0
+        return 4000          # Premium users
+
+    if access_type == "group_free":
+        return 500           # Normal group members
+
+    return 0                 # No access
 
 async def save_approved_card(card, status, response, gateway, price):
     try:
@@ -1588,7 +1594,7 @@ async def mst_command(event):
         )
 
     # Premium / free limit
-    cc_limit = get_cc_limit(access_type, event.sender_id)
+    cc_limit = await get_cc_limit(access_type, event.sender_id)
     if len(cards) > cc_limit:
         cards = cards[:cc_limit]
         await event.reply(f"⚠️ 𝙊𝙣𝙡𝙮 𝙘𝙝𝙚𝙘𝙠𝙞𝙣𝙜 𝙛𝙞𝙧𝙨𝙩 {cc_limit} (𝙮𝙤𝙪𝙧 𝙡𝙞𝙢𝙞𝙩)")
@@ -1698,7 +1704,7 @@ async def mstxt_command(event):
     if not cards:
         return await event.reply("𝙉𝙤 𝙫𝙖𝙡𝙞𝙙 𝙘𝙖𝙧𝙙𝙨 𝙛𝙤𝙪𝙣𝙙")
 
-    cc_limit = get_cc_limit(access_type, event.sender_id)
+    cc_limit = await get_cc_limit(access_type, event.sender_id)
     if len(cards) > cc_limit:
         cards = cards[:cc_limit]
         await event.reply(f"⚠️ 𝙊𝙣𝙡𝙮 𝙛𝙞𝙧𝙨𝙩 {cc_limit} 𝙘𝙖𝙧𝙙𝙨 (𝙡𝙞𝙢𝙞𝙩)")
@@ -2637,7 +2643,7 @@ async def ranfor(event):
     if not cards:
         return await event.reply("No valid cards found in file.")
 
-    cc_limit = get_cc_limit(access_type, event.sender_id)
+    cc_limit = await get_cc_limit(access_type, event.sender_id)
     if len(cards) > cc_limit:
         cards = cards[:cc_limit]
 
