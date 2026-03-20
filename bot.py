@@ -1296,50 +1296,54 @@ async def gen_cards(event):
                 amount = int(p)
 
     if not bin_input:
-        return await event.reply("**Usage:**\n`/gen 542542` → 10 cards\n`/gen 50 542542` → 50 cards")
+        return await event.reply(
+            "**NamsoGen Style Usage:**\n"
+            "`/gen 542542` → Generate 10 cards\n"
+            "`/gen 50 542542` → Generate 50 cards"
+        )
 
-    loading = await event.reply(f"⚡ Generating {amount} Luhn valid cards for BIN `{bin_input}`...")
+    loading = await event.reply(f"⚡ Generating {amount} cards...")
 
     cards = []
     for _ in range(amount):
         card = generate_card_from_bin(bin_input)
         month = random.randint(1, 12)
-        year = random.randint(26, 33)          # 2026 - 2033
-        cvv = f"{random.randint(100, 999)}"
+        year = random.randint(26, 33)
+        cvv = f"{random.randint(100,999)}"
         cards.append(f"{card}|{month:02d}|{year:02d}|{cvv}")
 
-    # Save to txt file (NamsoGen style)
+    # Save to file
     try:
         async with aiofiles.open("generated_cards.txt", "a", encoding="utf-8") as f:
-            await f.write(f"\n# BIN: {bin_input} | Amount: {amount} | {datetime.datetime.now()}\n")
+            await f.write(f"\n=== BIN: {bin_input} | Amount: {amount} | {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
             await f.write("\n".join(cards) + "\n\n")
     except:
         pass
 
-    # Show result like NamsoGen
+    # Exact NamsoGen Style Output
     result = f"""⚡ 𝗖𝗖 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗼𝗿 ⚡
 ⚡ 「•」 𝗕𝗜𝗡 ⇾ {bin_input}
 ⚡ 「•」 𝗔𝗺𝗼𝘂𝗻𝘁 ⇾ {amount}
 
 """ + "\n".join(cards) + f"""
 
-⚡ 「•」 𝗧𝗼𝘁𝗮𝗹 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 ⇾ {amount}
-💾 Saved in `generated_cards.txt`
+⚡ 「•」 𝗧𝗼𝘁𝗮𝗹 ⇾ {amount}
+💾 All cards saved → `generated_cards.txt`
 """
 
     await loading.edit(result)
 
 
-# ==================== PURE LUHN ALGORITHM (NamsoGen Style) ====================
+# ==================== PURE LUHN (Same as NamsoGen) ====================
 def generate_card_from_bin(bin_str: str) -> str:
     """Exact Luhn algorithm used by NamsoGen"""
     bin_str = str(bin_str).strip()[:8]
-    # Pad to 15 digits (16th will be check digit)
-    number = bin_str + '0' * (15 - len(bin_str))
-    digits = [int(d) for d in number]
+    # Pad to 15 digits
+    partial = bin_str + "0" * (15 - len(bin_str))
+    digits = [int(x) for x in partial]
 
-    # Luhn: double every second digit from the right
-    for i in range(len(digits)-2, -1, -2):
+    # Luhn doubling from right
+    for i in range(len(digits) - 2, -1, -2):
         digits[i] *= 2
         if digits[i] > 9:
             digits[i] -= 9
@@ -1347,9 +1351,7 @@ def generate_card_from_bin(bin_str: str) -> str:
     total = sum(digits)
     check_digit = (10 - (total % 10)) % 10
 
-    return bin_str + '0' * (15 - len(bin_str)) + str(check_digit)[:-1] + str(check_digit)  # Wait, correct way:
-    # Better:
-    return number[:-1] + str(check_digit)
+    return partial[:-1] + str(check_digit)
     
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)'))
 async def st_command(event):
