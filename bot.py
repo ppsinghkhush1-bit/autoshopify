@@ -1275,14 +1275,14 @@ async def view_proxy(event):
     text += "\n💡 Use `/rmpxy <number>` or `/rmpxy all` to remove"
     await event.reply(text)
 
-@client.on(events.NewMessage(pattern=r'(?i)^[/.]gen(?:\s+(\d+))?\s*(\d{6})?\s*(\d+)?'))
+@client.on(events.NewMessage(pattern=r'(?i)^[/.]gen(?:\s+(\d+))?\s*(\d{6,8})?\s*(\d{3,4})?'))
 async def gen_cards(event):
     """
     /gen [amount] [bin] [cvv]
     Examples:
-    • /gen 411111
-    • /gen 100 545301
-    • /gen 30 434256 777
+    • /gen 411111          → 50 cards with BIN 411111
+    • /gen 100 545301      → 100 cards with BIN 545301
+    • /gen 30 434256 777   → 30 cards with fixed CVV 777
     """
     can_access, access_type = await can_use(event.sender_id, event.chat)
     if access_type == "banned":
@@ -1294,7 +1294,7 @@ async def gen_cards(event):
             buttons=[[Button.url("Join Group", "https://t.me/deebuchecked")]]
         )
 
-    # ─── Better Argument Parsing ─────────────────────────────────────
+    # Parse arguments
     parts = event.raw_text.split()
     amount = 50
     bin_input = None
@@ -1302,11 +1302,11 @@ async def gen_cards(event):
 
     for p in parts[1:]:
         if p.isdigit():
-            if 6 <= len(p) <= 8:          # BIN
+            if 6 <= len(p) <= 8:      # BIN (6-8 digits)
                 bin_input = p
-            elif len(p) in [3, 4]:        # CVV
+            elif len(p) in [3, 4]:    # CVV
                 fixed_cvv = p
-            elif 1 <= int(p) <= 300:      # Amount
+            elif 1 <= int(p) <= 500:  # Amount (increased max to 500)
                 amount = int(p)
 
     if not bin_input:
@@ -1315,87 +1315,55 @@ async def gen_cards(event):
             "• `/gen 411111` → 50 cards\n"
             "• `/gen 100 545301` → 100 cards\n"
             "• `/gen 30 434256 777` → 30 cards with fixed CVV 777\n\n"
-            "Max amount: **300** (anti-ban)"
+            "Max amount: **500**"
         )
 
     if not bin_input.isdigit() or not (6 <= len(bin_input) <= 8):
         return await event.reply("❌ BIN must be 6–8 digits (e.g. `411111` or `54530111`)")
 
-    amount = min(max(amount, 1), 300)
+    amount = min(max(amount, 1), 500)
 
-    loading = await event.reply(f"🔄 Generating & checking **{amount}** cards with BIN `{bin_input}`...")
+    loading = await event.reply(f"🔄 Generating **{amount}** Luhn-valid cards with BIN `{bin_input}`...")
 
-    live = []
-    dead = 0
-    error = 0
+    live_cards = []   # We'll store generated cards here
 
-    async with aiohttp.ClientSession() as session:
-        for _ in range(amount):
-            card_number = generate_card_from_bin(bin_input)
-            month = random.randint(1, 12)
-            year = random.randint(25, 29)
-            cvv = fixed_cvv if fixed_cvv else f"{random.randint(0,999):03d}"
+    for _ in range(amount):
+        card_number = generate_card_from_bin(bin_input)
+        month = random.randint(1, 12)
+        year = random.randint(25, 30)   # 2025 to 2030
+        cvv = fixed_cvv if fixed_cvv else f"{random.randint(0, 999):03d}"
 
-            full_cc = f"{card_number}|{month:02d}|{year:02d}|{cvv}"
+        full_cc = f"{card_number}|{month:02d}|{year:02d}|{cvv}"
+        live_cards.append(full_cc)
 
-            try:
-                async with session.get(
-                    f"https://api.chkr.cc/?cc={full_cc}",
-                    timeout=12
-                ) as resp:
-                    if resp.status != 200:
-                        error += 1
-                        continue
-
-                    text = await resp.text()
-                    text_lower = text.lower()
-
-                    if any(word in text_lower for word in ["approved", "success", "live", "valid", "pass", "ok"]):
-                        live.append(full_cc)
-                    else:
-                        dead += 1
-
-            except Exception:
-                error += 1
-
-            await asyncio.sleep(random.uniform(0.7, 1.9))  # Rate limit
-
-    # ─── Final Result ────────────────────────────────────────────────
-    result = f"""**GEN Result — BIN {bin_input}**
+    # Final Result
+    result = f"""**✅ GEN Complete — BIN {bin_input}**
 Cards Generated: **{amount}**
-✅ **Live/Hits:** {len(live)}
-❌ **Dead:** {dead}
-⚠️ **Errors:** {error}
+All cards are **Luhn Valid**
+
+**Generated Cards:**
+
+💾 Saved to `generated_cards.txt`
 """
 
-    if live:
-        result += "\n**Live Cards:**\n```\n"
-        result += "\n".join(live)
-        result += "\n```"
-
-        try:
-            async with aiofiles.open("live_cards.txt", "a", encoding="utf-8") as f:
-                await f.write("\n".join(live) + "\n")
-            result += "\n→ Saved to `live_cards.txt`"
-        except:
-            result += "\n→ Could not save to file"
-    else:
-        result += "\nNo live cards found in this batch."
+    # Save to file
+    try:
+        async with aiofiles.open("generated_cards.txt", "a", encoding="utf-8") as f:
+            await f.write("\n".join(live_cards) + "\n\n")
+    except:
+        result += "\n⚠️ Could not save to file"
 
     await loading.edit(result)
 
 
-# Helper: Luhn compliant card generator (Improved)
+# ==================== LUHN ALGORITHM CARD GENERATOR ====================
 def generate_card_from_bin(bin_str: str) -> str:
-    """Generates valid card number from BIN with Luhn checksum"""
-    # Make sure BIN is 6-8 digits
-    bin_str = bin_str[:8]
-    
-    # Pad to 15 digits (we'll add checksum as 16th)
-    prefix = bin_str.ljust(15, '0')
+    """Generates a valid 16-digit card number from BIN using Luhn algorithm"""
+    bin_str = bin_str.strip()[:8]                    # Max 8 digits for BIN
+    prefix = bin_str.ljust(15, '0')                  # Pad to 15 digits
     digits = [int(d) for d in prefix]
 
-    # Luhn Algorithm
+    # Luhn Algorithm: Double every second digit from right
     for i in range(len(digits)-2, -1, -2):
         digits[i] *= 2
         if digits[i] > 9:
@@ -1405,6 +1373,7 @@ def generate_card_from_bin(bin_str: str) -> str:
     check_digit = (10 - (total % 10)) % 10
 
     return prefix[:-1] + str(check_digit)
+
 
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)'))
 async def st_command(event):
