@@ -1782,16 +1782,16 @@ async def process_sh_card(event, access_type):
 
         # Loading with your exact LOADING ID
         loading_msg = await event.reply(
-            f"<tg-emoji emoji-id=\"{SPECIAL_EMOJIS['LOADING']}\"></tg-emoji> Cooking card...",
+            f"Cooking card...",
             parse_mode='html'
         )
 
         async def animate_loading():
             phrases = [
-                f"<tg-emoji emoji-id=\"{SPECIAL_EMOJIS['LOADING']}\"></tg-emoji> Cooking...",
-                f"<tg-emoji emoji-id=\"{SPECIAL_EMOJIS['LOADING']}\"></tg-emoji> Gateway...",
-                f"<tg-emoji emoji-id=\"{SPECIAL_EMOJIS['LOADING']}\"></tg-emoji> Processing...",
-                f"<tg-emoji emoji-id=\"{SPECIAL_EMOJIS['LOADING']}\"></tg-emoji> Finalizing..."
+                f"Cooking...",
+                f"Gateway...",
+                f"Processing...",
+                f"Finalizing..."
             ]
             i = 0
             while True:
@@ -1850,7 +1850,7 @@ async def process_sh_card(event, access_type):
         emoji_id = STATUS_EMOJIS.get(status, STATUS_EMOJIS["DECLINED"])
 
         card_msg = f"""
-<b><tg-emoji emoji-id="{emoji_id}"></tg-emoji> {status}</b>
+<b>{status}</b>
 
 <b>CC</b> ➜ <code>{card}</code>
 <b>Gateway</b> ➜ {gateway}
@@ -1862,7 +1862,7 @@ async def process_sh_card(event, access_type):
 Bank: {bank}
 Country: {country} {flag}</code></pre>
 
-<i>Took {elapsed}s <tg-emoji emoji-id="{SPECIAL_EMOJIS['FIRE']}"></tg-emoji></i>
+<i>Took {elapsed}s </i>
 """
 
         await event.reply(card_msg, parse_mode='html')
