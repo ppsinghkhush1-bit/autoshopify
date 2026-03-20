@@ -38,8 +38,6 @@ SPECIAL_EMOJIS = {
     "STATS":             "6289610422488139897",    # 📊 chart
 }
 
-client = TelegramClient('cc_bot', API_ID, API_HASH)
-
 # Files
 PREMIUM_FILE = "premium.json"
 FREE_FILE = "free_users.json"
@@ -592,42 +590,32 @@ def parse_proxy(proxy: str):
 async def start(event):
     user_id = event.sender_id
     chat = event.chat
-
+    
     if await is_banned_user(user_id):
         return await event.reply(banned_user_message())
 
     can_access, access_type = await can_use(user_id, chat)
     current_limit = await get_cc_limit(access_type, user_id)
 
-    # Default status
     premium_status = "🆓 **Free User**"
-
-    # Premium check
     if await is_premium_user(user_id):
         try:
             premium_users = await load_json(PREMIUM_FILE)
             data = premium_users.get(str(user_id))
-
             if data and 'expiry' in data:
                 expiry = datetime.datetime.fromisoformat(data['expiry'])
-                now = datetime.datetime.now(expiry.tzinfo) if expiry.tzinfo else datetime.datetime.now()
-
-                remaining = max(0, (expiry - now).days)
+                remaining = max(0, (expiry - datetime.datetime.now()).days)
                 premium_status = f"💎 **Premium Active** | Expires in {remaining} days"
-        except Exception:
+        except:
             premium_status = "💎 **Premium Active**"
 
-    # Role tag
     role_tag = ""
     if await is_owner(user_id):
         role_tag = "👑 Bot Owner"
     elif await is_admin(user_id):
         role_tag = "⭐ Bot Admin"
 
-    role_display = role_tag if role_tag else "Chef"
-
-    text = f"""🍳 **CC Chef Bot – Welcome {role_display}** 🔥
-
+    text = f"""🍳 **CC Chef Bot – Welcome {role_tag or 'Chef'}** 🔥
 {premium_status}
 **Your Current Limit:** {current_limit:,} CCs per check
 
@@ -643,9 +631,6 @@ async def start(event):
 • `/mst` → Mass Stripe from text
 • `/mstxt` → Stripe from .txt file
 
-**BIN Tools**
-• `/gen [amount] [bin]` → Generate & check cards
-
 **Tools**
 • `/add` → Add domains
 • `/addpxy` → Add proxy
@@ -653,12 +638,9 @@ async def start(event):
 • `/redeem <key>` → Activate key
 
 Start cooking or get left behind 🔥
-
 Support: @Dreadsync_2 | Free Group: https://t.me/deebuchecked
 """
-
     await event.reply(text)
-
 
 # ================= PROXY TEST FIX ================= #
 
@@ -1981,9 +1963,7 @@ async def msh(event):
     if not user_sites:
         return await event.reply("No sites added. Use /add first.")
 
-    await process_msh_cards(event, cards, user_sites)
-
-
+    asyncio.create_task(process_msh_cards(event, cards, user_sites))
 async def process_msh_cards(event, cards, sites):
     status_msg = await event.reply(f"🔥 Cooking {len(cards)} cards...")
 
@@ -2650,8 +2630,22 @@ async def ranfor(event):
     if not sites:
         return await event.reply("No sites in sites.txt! Contact admin.")
 
-    await process_ranfor_cards(event, cards, sites)
+    asyncio.create_task(process_ranfor_cards(event, cards, sites))
 
+@client.on(events.CallbackQuery(pattern=rb"stop_ran:(\d+)"))
+async def stop_ran_callback(event):
+    try:
+        process_user_id = int(event.pattern_match.group(1))
+        if event.sender_id != process_user_id and not await is_admin(event.sender_id):
+            return await event.answer("❌ Not your process!", alert=True)
+
+        if process_user_id in ACTIVE_MTXT_PROCESSES:
+            ACTIVE_MTXT_PROCESSES.pop(process_user_id, None)
+            await event.answer("🛑 Stopped successfully!", alert=True)
+        else:
+            await event.answer("Already finished or not running.", alert=True)
+    except:
+        await event.answer("Error stopping process.", alert=True)
 
 async def process_ranfor_cards(event, cards, sites):
     status_msg = await event.reply(f"🔥 Cooking {len(cards)} cards from file using random sites...")
