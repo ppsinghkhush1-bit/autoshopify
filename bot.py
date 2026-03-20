@@ -1296,13 +1296,9 @@ async def gen_cards(event):
                 amount = int(p)
 
     if not bin_input:
-        return await event.reply(
-            "**NamsoGen Style Usage:**\n"
-            "`/gen 542542` → Generate 10 cards\n"
-            "`/gen 50 542542` → Generate 50 cards"
-        )
+        return await event.reply("Usage:\n`/gen 544125` → 10 cards\n`/gen 50 544125` → 50 cards")
 
-    loading = await event.reply(f"⚡ Generating {amount} cards...")
+    loading = await event.reply("⚡ Generating cards...")
 
     cards = []
     for _ in range(amount):
@@ -1312,7 +1308,7 @@ async def gen_cards(event):
         cvv = f"{random.randint(100,999)}"
         cards.append(f"{card}|{month:02d}|{year:02d}|{cvv}")
 
-    # Save to file
+    # Save
     try:
         async with aiofiles.open("generated_cards.txt", "a", encoding="utf-8") as f:
             await f.write(f"\n=== BIN: {bin_input} | Amount: {amount} | {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
@@ -1320,7 +1316,7 @@ async def gen_cards(event):
     except:
         pass
 
-    # Exact NamsoGen Style Output
+    # Final Output - Clean NamsoGen Style
     result = f"""⚡ 𝗖𝗖 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗼𝗿 ⚡
 ⚡ 「•」 𝗕𝗜𝗡 ⇾ {bin_input}
 ⚡ 「•」 𝗔𝗺𝗼𝘂𝗻𝘁 ⇾ {amount}
@@ -1333,16 +1329,14 @@ async def gen_cards(event):
 
     await loading.edit(result)
 
-
-# ==================== PURE LUHN (Same as NamsoGen) ====================
 def generate_card_from_bin(bin_str: str) -> str:
-    """Exact Luhn algorithm used by NamsoGen"""
-    bin_str = str(bin_str).strip()[:8]
-    # Pad to 15 digits
-    partial = bin_str + "0" * (15 - len(bin_str))
-    digits = [int(x) for x in partial]
+    """Exact Luhn Algorithm - Same as NamsoGen.co"""
+    bin_str = str(bin_str).strip()[:8]                    # Take only first 8 digits
+    # Make it 15 digits (we will add check digit as 16th)
+    number = bin_str + "0" * (15 - len(bin_str))
+    digits = [int(d) for d in number]
 
-    # Luhn doubling from right
+    # Luhn: double every second digit from the RIGHT
     for i in range(len(digits) - 2, -1, -2):
         digits[i] *= 2
         if digits[i] > 9:
@@ -1351,7 +1345,8 @@ def generate_card_from_bin(bin_str: str) -> str:
     total = sum(digits)
     check_digit = (10 - (total % 10)) % 10
 
-    return partial[:-1] + str(check_digit)
+    # Return full 16 digit card
+    return number[:-1] + str(check_digit)
     
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)'))
 async def st_command(event):
@@ -1727,26 +1722,18 @@ async def process_sh_card(event, access_type):
         if not user_sites:
             return await event.reply("No sites. Use /add first")
 
-        # Loading with your exact LOADING ID
-        loading_msg = await event.reply(
-            f"Cooking card...",
-            parse_mode='html'
-        )
+        loading_msg = await event.reply("🍳 Cooking card...")
 
+        # Simple loading animation
         async def animate_loading():
-            phrases = [
-                f"Cooking...",
-                f"Gateway...",
-                f"Processing...",
-                f"Finalizing..."
-            ]
+            phrases = ["Cooking...", "Gateway...", "Processing...", "Finalizing..."]
             i = 0
             while True:
                 try:
-                    await loading_msg.edit(phrases[i % 4], parse_mode='html')
+                    await loading_msg.edit(phrases[i % 4])
                     i += 1
                     await asyncio.sleep(1.2)
-                except Exception:
+                except:
                     break
 
         loading_task = asyncio.create_task(animate_loading())
@@ -1758,11 +1745,10 @@ async def process_sh_card(event, access_type):
             )
         except asyncio.TimeoutError:
             if loading_task: loading_task.cancel()
-            await loading_msg.edit("❌ Timed out (40s)", parse_mode='html')
+            await loading_msg.edit("❌ Timed out (40s)")
             return
 
         elapsed = round(time.time() - start_time, 2)
-
         bin_prefix = card.split("|")[0][:6]
         brand, bin_type, level, bank, country, flag = await get_bin_info(bin_prefix)
 
@@ -1789,31 +1775,27 @@ async def process_sh_card(event, access_type):
         if save_type:
             await save_approved_card(card, save_type, res.get('Response', 'No response'), res.get('Gateway', 'Unknown'), res.get('Price', '-'))
 
-        gateway  = res.get('Gateway', 'Unknown')
-        price    = res.get('Price',    '-')
+        gateway = res.get('Gateway', 'Unknown')
+        price = res.get('Price', '-')
         response = res.get('Response', 'No response received')
 
-        # Use your exact emoji IDs
-        emoji_id = STATUS_EMOJIS.get(status, STATUS_EMOJIS["DECLINED"])
-
         card_msg = f"""
-<b>{status}</b>
+**{status}**
+𝗖𝗖 ⇾ `{card}`
+𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ⇾ {gateway}
+𝗥𝗲𝙨𝙥𝙤𝙣𝙨𝗲 ⇾ {html.escape(response)}
+𝗣𝗿𝗶𝗰𝗲 ⇾ {price}
+𝗦𝗶𝘁𝗲 ⇾ {site_index + 1}/{len(user_sites)}
 
-<b>CC</b> ➜ <code>{card}</code>
-<b>Gateway</b> ➜ {gateway}
-<b>Response</b> ➜ {html.escape(response)}
-<b>Price</b> ➜ {price} <tg-emoji emoji-id="{SPECIAL_EMOJIS['PRICE']}"></tg-emoji>
-<b>Site</b> ➜ {site_index + 1}/{len(user_sites)}
-
-<pre><code>BIN Info: {brand} - {bin_type} - {level}
+BIN Info: {brand} - {bin_type} - {level}
 Bank: {bank}
-Country: {country} {flag}</code></pre>
+Country: {country} {flag}
 
-<i>Took {elapsed}s </i>
+Took {elapsed}s
 """
 
-        await event.reply(card_msg, parse_mode='html')
-
+        await event.reply(card_msg)
+        
         if status == "CHARGED":
             try:
                 await pin_charged_message(event, await event.get_reply_message())
@@ -1824,10 +1806,9 @@ Country: {country} {flag}</code></pre>
         print(f"/sh error: {e}")
         if loading_msg:
             try:
-                await loading_msg.edit(f"❌ Error: {str(e)[:80]}", parse_mode='html')
+                await loading_msg.edit(f"❌ Error: {str(e)[:80]}")
             except:
                 pass
-
     finally:
         if loading_task and not loading_task.done():
             loading_task.cancel()
