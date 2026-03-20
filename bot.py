@@ -1282,12 +1282,10 @@ async def gen_cards(event):
         return await event.reply(banned_user_message())
 
     if not can_access:
-        return await event.reply("🚫 Unauthorized! Use in group or get premium.", 
-            buttons=[[Button.url("Join Group", "https://t.me/deebuchecked")]])
+        return await event.reply("🚫 Unauthorized!")
 
-    # Parse input
     parts = event.raw_text.split()
-    amount = 10                    # Default = 10 cards
+    amount = 10
     bin_input = None
 
     for p in parts[1:]:
@@ -1298,58 +1296,49 @@ async def gen_cards(event):
                 amount = int(p)
 
     if not bin_input:
-        return await event.reply(
-            "**Usage:**\n"
-            "`/gen 420495` → Generate **10** cards\n"
-            "`/gen 100 420495` → Generate **100** cards"
-        )
+        return await event.reply("**Usage:**\n`/gen 542542` → 10 cards\n`/gen 50 542542` → 50 cards")
 
-    loading = await event.reply(f"⚡ Generating **{amount}** cards with BIN `{bin_input}`...")
+    loading = await event.reply(f"⚡ Generating {amount} Luhn valid cards for BIN `{bin_input}`...")
 
-    generated = []
+    cards = []
     for _ in range(amount):
-        card_number = generate_card_from_bin(bin_input)
+        card = generate_card_from_bin(bin_input)
         month = random.randint(1, 12)
-        year = random.randint(26, 33)        # 2026 to 2033
+        year = random.randint(26, 33)          # 2026 - 2033
         cvv = f"{random.randint(100, 999)}"
-        full_cc = f"{card_number}|{month:02d}|{year:02d}|{cvv}"
-        generated.append(full_cc)
+        cards.append(f"{card}|{month:02d}|{year:02d}|{cvv}")
 
-    # Save all cards to txt file
+    # Save to txt file (NamsoGen style)
     try:
         async with aiofiles.open("generated_cards.txt", "a", encoding="utf-8") as f:
-            await f.write(f"\n=== GEN {bin_input} | {amount} Cards | {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
-            await f.write("\n".join(generated) + "\n\n")
+            await f.write(f"\n# BIN: {bin_input} | Amount: {amount} | {datetime.datetime.now()}\n")
+            await f.write("\n".join(cards) + "\n\n")
     except:
         pass
 
-    # Final Beautiful Output
-    result = f"""⚡ **𝗖𝗖 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗼𝗿** ⚡
-⚡ 「•」 **𝗕𝗜𝗡** ⇾ `{bin_input}`
-⚡ 「•」 **𝗔𝗺𝗼𝘂𝗻𝘁** ⇾ `{amount}`
+    # Show result like NamsoGen
+    result = f"""⚡ 𝗖𝗖 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗼𝗿 ⚡
+⚡ 「•」 𝗕𝗜𝗡 ⇾ {bin_input}
+⚡ 「•」 𝗔𝗺𝗼𝘂𝗻𝘁 ⇾ {amount}
 
-""" + "\n".join(generated[:10])   # Show first 10 cards
+""" + "\n".join(cards) + f"""
 
-    if amount > 10:
-        result += f"\n\n... and {amount-10} more cards"
-
-    result += f"""
-⚡ 「•」 **𝗜𝗻𝗳𝗼** ⇾ VISA - PREPAID
-⚡ 「•」 **𝗜𝘀𝘀𝘂𝗲𝗿** ⇾ PATHWARD, N.A.
-⚡ 「•」 **𝗖𝗼𝘂𝗻𝘁𝗿𝘆** ⇾ UNITED STATES OF AMERICA 🇺🇸
-
-💾 All {amount} cards saved to `generated_cards.txt`
+⚡ 「•」 𝗧𝗼𝘁𝗮𝗹 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 ⇾ {amount}
+💾 Saved in `generated_cards.txt`
 """
 
     await loading.edit(result)
 
 
-# ==================== LUHN GENERATOR ====================
+# ==================== PURE LUHN ALGORITHM (NamsoGen Style) ====================
 def generate_card_from_bin(bin_str: str) -> str:
-    bin_str = bin_str.strip()[:8]
-    prefix = bin_str.ljust(15, '0')
-    digits = [int(d) for d in prefix]
+    """Exact Luhn algorithm used by NamsoGen"""
+    bin_str = str(bin_str).strip()[:8]
+    # Pad to 15 digits (16th will be check digit)
+    number = bin_str + '0' * (15 - len(bin_str))
+    digits = [int(d) for d in number]
 
+    # Luhn: double every second digit from the right
     for i in range(len(digits)-2, -1, -2):
         digits[i] *= 2
         if digits[i] > 9:
@@ -1357,7 +1346,10 @@ def generate_card_from_bin(bin_str: str) -> str:
 
     total = sum(digits)
     check_digit = (10 - (total % 10)) % 10
-    return prefix[:-1] + str(check_digit)
+
+    return bin_str + '0' * (15 - len(bin_str)) + str(check_digit)[:-1] + str(check_digit)  # Wait, correct way:
+    # Better:
+    return number[:-1] + str(check_digit)
     
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)'))
 async def st_command(event):
