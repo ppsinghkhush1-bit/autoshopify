@@ -4,6 +4,8 @@ import requests, random, datetime, json, os, re, asyncio, time
 import string, aiohttp, stripe, aiofiles
 from urllib.parse import urlparse
 import html
+import random
+
 
 # ─── CONFIG ────────────────────────────────────────────────────────
 OWNER_ID = 8353717748
@@ -1332,15 +1334,22 @@ async def gen_cards(event):
 
 # ==================== FIXED LUHN ALGORITHM (Correct One) ====================
 def generate_card_from_bin(bin_str: str) -> str:
-    """Correct Luhn Algorithm - Same as NamsoGen"""
-    bin_str = str(bin_str).strip()[:8]
-    
-    # Create 15 digits base
-    base = bin_str + "0" * (15 - len(bin_str))
-    digits = [int(d) for d in base]
+    """Generate a valid card number using Luhn algorithm"""
 
-    # Luhn doubling from right to left (excluding the last digit)
-    for i in range(len(digits)-2, -1, -2):
+    bin_str = str(bin_str).strip()
+    
+    if not (6 <= len(bin_str) <= 8):
+        raise ValueError("BIN must be 6 to 8 digits")
+
+    # Generate random digits to make total length 15 (excluding check digit)
+    remaining_length = 15 - len(bin_str)
+    random_digits = ''.join(str(random.randint(0, 9)) for _ in range(remaining_length))
+
+    base_number = bin_str + random_digits
+    digits = [int(d) for d in base_number]
+
+    # Apply Luhn algorithm (from right to left)
+    for i in range(len(digits) - 1, -1, -2):
         digits[i] *= 2
         if digits[i] > 9:
             digits[i] -= 9
@@ -1348,8 +1357,7 @@ def generate_card_from_bin(bin_str: str) -> str:
     total = sum(digits)
     check_digit = (10 - (total % 10)) % 10
 
-    # Return full 16 digit card
-    return base[:-1] + str(check_digit)
+    return base_number + str(check_digit)
     
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)'))
 async def st_command(event):
