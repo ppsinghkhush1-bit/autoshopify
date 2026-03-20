@@ -597,25 +597,36 @@ async def start(event):
         return await event.reply(banned_user_message())
 
     can_access, access_type = await can_use(user_id, chat)
-
     current_limit = await get_cc_limit(access_type, user_id)
 
+    # Default status
     premium_status = "🆓 **Free User**"
-    if await is_premium_user(user_id):
-        premium_users = await load_json(PREMIUM_FILE)
-        data = premium_users.get(str(user_id), {})
-        if data:
-            expiry = datetime.datetime.fromisoformat(data['expiry'])
-            remaining = max(0, (expiry - datetime.datetime.now()).days)
-            premium_status = f"💎 **Premium Active** | Expires in {remaining} days"
 
+    # Premium check
+    if await is_premium_user(user_id):
+        try:
+            premium_users = await load_json(PREMIUM_FILE)
+            data = premium_users.get(str(user_id))
+
+            if data and 'expiry' in data:
+                expiry = datetime.datetime.fromisoformat(data['expiry'])
+                now = datetime.datetime.now(expiry.tzinfo) if expiry.tzinfo else datetime.datetime.now()
+
+                remaining = max(0, (expiry - now).days)
+                premium_status = f"💎 **Premium Active** | Expires in {remaining} days"
+        except Exception:
+            premium_status = "💎 **Premium Active**"
+
+    # Role tag
     role_tag = ""
     if await is_owner(user_id):
         role_tag = "👑 Bot Owner"
     elif await is_admin(user_id):
         role_tag = "⭐ Bot Admin"
 
-    text = f"""🍳 **CC Chef Bot – Welcome {role_tag or 'Chef'}** 🔥
+    role_display = role_tag if role_tag else "Chef"
+
+    text = f"""🍳 **CC Chef Bot – Welcome {role_display}** 🔥
 
 {premium_status}
 **Your Current Limit:** {current_limit:,} CCs per check
@@ -647,17 +658,36 @@ Support: @Dreadsync_2 | Free Group: https://t.me/deebuchecked
 """
 
     await event.reply(text)
-    
+
+
+# ================= PROXY TEST FIX ================= #
+
 async def test_proxy(proxy_url):
     """Test if proxy is working"""
     try:
         timeout = aiohttp.ClientTimeout(total=15)
+
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get('http://api.ipify.org?format=json', proxy=proxy_url) as res:
+            async with session.get(
+                'http://api.ipify.org?format=json',
+                proxy=proxy_url
+            ) as res:
+
                 if res.status == 200:
-                    data = await res.json()
-                    return True, data.get('ip', 'Unknown')
-                return False, None
+                    try:
+                        data = await res.json()
+                        return True, data.get('ip', 'Unknown')
+                    except Exception:
+                        return False, "Invalid JSON response"
+
+                return False, f"HTTP {res.status}"
+
+    except asyncio.TimeoutError:
+        return False, "Timeout"
+
+    except aiohttp.ClientProxyConnectionError:
+        return False, "Proxy connection failed"
+
     except Exception as e:
         return False, str(e)
 
