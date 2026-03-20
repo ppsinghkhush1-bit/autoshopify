@@ -1298,7 +1298,7 @@ async def gen_cards(event):
     if not bin_input:
         return await event.reply("Usage:\n`/gen 544125` → 10 cards\n`/gen 50 544125` → 50 cards")
 
-    loading = await event.reply("⚡ Generating cards...")
+    loading = await event.reply("⚡ Generating...")
 
     cards = []
     for _ in range(amount):
@@ -1316,7 +1316,7 @@ async def gen_cards(event):
     except:
         pass
 
-    # Final Output - Clean NamsoGen Style
+    # Final Output
     result = f"""⚡ 𝗖𝗖 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗼𝗿 ⚡
 ⚡ 「•」 𝗕𝗜𝗡 ⇾ {bin_input}
 ⚡ 「•」 𝗔𝗺𝗼𝘂𝗻𝘁 ⇾ {amount}
@@ -1329,15 +1329,18 @@ async def gen_cards(event):
 
     await loading.edit(result)
 
-def generate_card_from_bin(bin_str: str) -> str:
-    """Exact Luhn Algorithm - Same as NamsoGen.co"""
-    bin_str = str(bin_str).strip()[:8]                    # Take only first 8 digits
-    # Make it 15 digits (we will add check digit as 16th)
-    number = bin_str + "0" * (15 - len(bin_str))
-    digits = [int(d) for d in number]
 
-    # Luhn: double every second digit from the RIGHT
-    for i in range(len(digits) - 2, -1, -2):
+# ==================== FIXED LUHN ALGORITHM (Correct One) ====================
+def generate_card_from_bin(bin_str: str) -> str:
+    """Correct Luhn Algorithm - Same as NamsoGen"""
+    bin_str = str(bin_str).strip()[:8]
+    
+    # Create 15 digits base
+    base = bin_str + "0" * (15 - len(bin_str))
+    digits = [int(d) for d in base]
+
+    # Luhn doubling from right to left (excluding the last digit)
+    for i in range(len(digits)-2, -1, -2):
         digits[i] *= 2
         if digits[i] > 9:
             digits[i] -= 9
@@ -1346,7 +1349,7 @@ def generate_card_from_bin(bin_str: str) -> str:
     check_digit = (10 - (total % 10)) % 10
 
     # Return full 16 digit card
-    return number[:-1] + str(check_digit)
+    return base[:-1] + str(check_digit)
     
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)'))
 async def st_command(event):
