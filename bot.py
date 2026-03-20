@@ -2401,16 +2401,15 @@ async def stats(event):
         free_users = await load_json(FREE_FILE)
         user_sites = await load_json(SITE_FILE)
         keys_data = await load_json(KEYS_FILE)
+        admins = await load_admins()   # Fixed: Use load_admins() instead of undefined ADMIN_ID
 
         stats_content = "🔥 BOT STATISTICS REPORT 🔥\n"
-        stats_content += "=" * 50 + "\n\n"
-
+        stats_content += "=" * 60 + "\n\n"
+        
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         stats_content += f"📅 Generated on: {current_time}\n\n"
 
-        stats_content += "👥 USER STATISTICS\n"
-        stats_content += "-" * 30 + "\n"
-
+        # ─── USER STATISTICS ─────────────────────────────────────
         all_user_ids = set()
         all_user_ids.update(premium_users.keys())
         all_user_ids.update(free_users.keys())
@@ -2418,111 +2417,104 @@ async def stats(event):
 
         total_users = len(all_user_ids)
         total_premium = len(premium_users)
-        total_free = total_users - total_premium
+        total_free = len(free_users)  # More accurate
 
-        stats_content += f"📊 Total Unique Users: {total_users}\n"
-        stats_content += f"💎 Premium Users: {total_premium}\n"
-        stats_content += f"🆓 Free Users: {total_free}\n\n"
+        stats_content += "👥 USER STATISTICS\n"
+        stats_content += "-" * 40 + "\n"
+        stats_content += f"📊 Total Unique Users : {total_users}\n"
+        stats_content += f"💎 Premium Users     : {total_premium}\n"
+        stats_content += f"🆓 Free Users        : {total_free}\n\n"
 
+        # ─── PREMIUM USERS DETAILS ───────────────────────────────
         if premium_users:
             stats_content += "💎 PREMIUM USERS DETAILS\n"
-            stats_content += "-" * 30 + "\n"
+            stats_content += "-" * 40 + "\n"
+            for uid, data in premium_users.items():
+                try:
+                    expiry = datetime.datetime.fromisoformat(data['expiry'])
+                    status = "ACTIVE ✅" if datetime.datetime.now() <= expiry else "EXPIRED ❌"
+                    days_left = max(0, (expiry - datetime.datetime.now()).days)
+                    
+                    stats_content += f"User ID     : {uid}\n"
+                    stats_content += f"Status      : {status}\n"
+                    stats_content += f"Days Given  : {data.get('days', 'N/A')}\n"
+                    stats_content += f"Added By    : {data.get('added_by', 'N/A')}\n"
+                    stats_content += f"Expires     : {expiry.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    stats_content += f"Days Left   : {days_left}\n"
+                    stats_content += "-" * 30 + "\n"
+                except:
+                    stats_content += f"User ID : {uid} → Error parsing data\n"
 
-            for user_id, user_data in premium_users.items():
-                expiry_date = datetime.datetime.fromisoformat(user_data['expiry'])
-                current_date = datetime.datetime.now()
-
-                status = "ACTIVE" if current_date <= expiry_date else "EXPIRED"
-                days_remaining = (expiry_date - current_date).days if current_date <= expiry_date else 0
-
-                stats_content += f"User ID: {user_id}\n"
-                stats_content += f"  Status: {status}\n"
-                stats_content += f"  Days Given: {user_data.get('days', 'N/A')}\n"
-                stats_content += f"  Added By: {user_data.get('added_by', 'N/A')}\n"
-                stats_content += f"  Expires: {expiry_date.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                stats_content += f"  Days Remaining: {days_remaining}\n"
-                stats_content += "-" * 20 + "\n"
-
+        # ─── SITES STATISTICS ────────────────────────────────────
         stats_content += "\n🌐 SITES STATISTICS\n"
-        stats_content += "-" * 30 + "\n"
+        stats_content += "-" * 40 + "\n"
+        total_sites = sum(len(sites) for sites in user_sites.values())
+        users_with_sites = len([u for u, s in user_sites.items() if s])
 
-        total_sites_count = sum(len(sites) for sites in user_sites.values())
-        users_with_sites = len([uid for uid, sites in user_sites.items() if sites])
+        stats_content += f"📈 Total Sites Added   : {total_sites}\n"
+        stats_content += f"👤 Users with Sites    : {users_with_sites}\n"
 
-        stats_content += f"📈 Total Sites Added: {total_sites_count}\n"
-        stats_content += f"👤 Users with Sites: {users_with_sites}\n"
-
-        if user_sites:
-            stats_content += f"\nSites per User:\n"
-            for user_id, sites in user_sites.items():
-                if sites:
-                    stats_content += f"  User {user_id}: {len(sites)} sites\n"
-                    for site in sites:
-                        stats_content += f"    - {site}\n"
-
-        stats_content += f"\n🔑 KEYS STATISTICS\n"
-        stats_content += "-" * 30 + "\n"
-
+        # ─── KEYS STATISTICS ─────────────────────────────────────
+        stats_content += "\n🔑 KEYS STATISTICS\n"
+        stats_content += "-" * 40 + "\n"
         total_keys = len(keys_data)
-        used_keys = len([k for k, v in keys_data.items() if v.get('used', False)])
+        used_keys = sum(1 for v in keys_data.values() if v.get('used', False))
         unused_keys = total_keys - used_keys
 
-        stats_content += f"🔢 Total Keys Generated: {total_keys}\n"
-        stats_content += f"✅ Used Keys: {used_keys}\n"
-        stats_content += f"⏳ Unused Keys: {unused_keys}\n"
+        stats_content += f"🔢 Total Keys Generated : {total_keys}\n"
+        stats_content += f"✅ Used Keys            : {used_keys}\n"
+        stats_content += f"⏳ Unused Keys          : {unused_keys}\n"
 
         if keys_data:
-            stats_content += f"\nKeys Details:\n"
-            for key, key_data in keys_data.items():
-                status = "USED" if key_data.get('used', False) else "UNUSED"
-                used_by = key_data.get('used_by', 'N/A')
-                days = key_data.get('days', 'N/A')
-                created = key_data.get('created_at', 'N/A')
-                used_at = key_data.get('used_at', 'N/A')
+            stats_content += "\nKeys Details:\n"
+            for key, data in keys_data.items():
+                status = "USED ✅" if data.get('used') else "UNUSED ⏳"
+                stats_content += f"Key      : {key}\n"
+                stats_content += f"Status   : {status}\n"
+                stats_content += f"Days     : {data.get('days', 'N/A')}\n"
+                stats_content += f"Created  : {data.get('created_at', 'N/A')[:19]}\n"
+                if data.get('used'):
+                    stats_content += f"Used By  : {data.get('used_by')}\n"
+                    stats_content += f"Used At  : {data.get('used_at', 'N/A')[:19]}\n"
+                stats_content += "-" * 25 + "\n"
 
-                stats_content += f"  Key: {key}\n"
-                stats_content += f"    Status: {status}\n"
-                stats_content += f"    Days Value: {days}\n"
-                stats_content += f"    Created: {created}\n"
-                if status == "USED":
-                    stats_content += f"    Used By: {used_by}\n"
-                    stats_content += f"    Used At: {used_at}\n"
-                stats_content += "-" * 15 + "\n"
+        # ─── ADMIN STATISTICS ────────────────────────────────────
+        stats_content += "\n👑 ADMIN STATISTICS\n"
+        stats_content += "-" * 40 + "\n"
+        stats_content += f"🛡️ Total Admins : {len(admins)}\n"
+        stats_content += f"Admin IDs     : {', '.join(map(str, admins))}\n"
 
-        stats_content += f"\n👑 ADMIN STATISTICS\n"
-        stats_content += "-" * 30 + "\n"
-        stats_content += f"🛡️ Total Admins: {len(ADMIN_ID)}\n"
-        stats_content += f"Admin IDs: {', '.join(map(str, ADMIN_ID))}\n"
-
+        # ─── CARD STATISTICS ─────────────────────────────────────
         if os.path.exists(CC_FILE):
             try:
                 async with aiofiles.open(CC_FILE, "r", encoding="utf-8") as f:
                     cc_content = await f.read()
-                cc_lines = cc_content.strip().split('\n') if cc_content.strip() else []
-                approved_cards = len([line for line in cc_lines if 'APPROVED' in line])
-                charged_cards = len([line for line in cc_lines if 'CHARGED' in line])
+                cc_lines = [line.strip() for line in cc_content.split('\n') if line.strip()]
+                
+                approved_cards = len([line for line in cc_lines if 'APPROVED' in line.upper()])
+                charged_cards = len([line for line in cc_lines if 'CHARGED' in line.upper()])
 
-                stats_content += f"\n💳 CARD STATISTICS\n"
-                stats_content += "-" * 30 + "\n"
-                stats_content += f"📊 Total Processed Cards: {len(cc_lines)}\n"
-                stats_content += f"✅ Approved Cards: {approved_cards}\n"
-                stats_content += f"💎 Charged Cards: {charged_cards}\n"
+                stats_content += "\n💳 CARD STATISTICS\n"
+                stats_content += "-" * 40 + "\n"
+                stats_content += f"📊 Total Processed Cards : {len(cc_lines)}\n"
+                stats_content += f"✅ Approved Cards        : {approved_cards}\n"
+                stats_content += f"💎 Charged Cards         : {charged_cards}\n"
             except:
                 pass
 
-        stats_content += "\n" + "=" * 50 + "\n"
+        stats_content += "\n" + "=" * 60 + "\n"
         stats_content += "📋 END OF REPORT 📋"
 
+        # Save and send file
         stats_filename = f"bot_stats_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         async with aiofiles.open(stats_filename, "w", encoding="utf-8") as f:
             await f.write(stats_content)
 
         await event.reply("📊 𝘽𝙤𝙩 𝙨𝙩𝙖𝙩𝙞𝙨𝙩𝙞𝙘𝙨 𝙧𝙚𝙥𝙤𝙧𝙩 𝙜𝙚𝙣𝙚𝙧𝙖𝙩𝙚𝙙!", file=stats_filename)
-
         os.remove(stats_filename)
 
     except Exception as e:
-        await event.reply(f"❌ 𝙀𝙧𝙧𝙤𝙧 𝙜𝙚𝙣𝙚𝙧𝙖𝙩𝙞𝙣𝙜 𝙨𝙩𝙖𝙩𝙨: {e}")
+        await event.reply(f"❌ 𝙀𝙧𝙧𝙤𝙧 𝙜𝙚𝙣𝙚𝙧𝙖𝙩𝙞𝙣𝙜 𝙨𝙩𝙖𝙩𝙨: {str(e)}")
 
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]admins?$'))
 async def show_admins(event):
