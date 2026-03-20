@@ -1275,95 +1275,81 @@ async def view_proxy(event):
     text += "\n💡 Use `/rmpxy <number>` or `/rmpxy all` to remove"
     await event.reply(text)
 
-@client.on(events.NewMessage(pattern=r'(?i)^[/.]gen(?:\s+(\d+))?\s*(\d{6,8})?\s*(\d{3,4})?'))
+@client.on(events.NewMessage(pattern=r'(?i)^[/.]gen(?:\s+(\d+))?\s*(\d{6,8})?'))
 async def gen_cards(event):
-    """
-    /gen [amount] [bin] [cvv]
-    Examples:
-    • /gen 411111          → 50 cards with BIN 411111
-    • /gen 100 545301      → 100 cards with BIN 545301
-    • /gen 30 434256 777   → 30 cards with fixed CVV 777
-    """
     can_access, access_type = await can_use(event.sender_id, event.chat)
     if access_type == "banned":
         return await event.reply(banned_user_message())
 
     if not can_access:
-        return await event.reply(
-            "🚫 Unauthorized!\nUse in group for free or get premium.",
-            buttons=[[Button.url("Join Group", "https://t.me/deebuchecked")]]
-        )
+        return await event.reply("🚫 Unauthorized! Use in group or get premium.", 
+            buttons=[[Button.url("Join Group", "https://t.me/deebuchecked")]])
 
-    # Parse arguments
+    # Parse input
     parts = event.raw_text.split()
-    amount = 50
+    amount = 10                    # Default = 10 cards
     bin_input = None
-    fixed_cvv = None
 
     for p in parts[1:]:
         if p.isdigit():
-            if 6 <= len(p) <= 8:      # BIN (6-8 digits)
+            if 6 <= len(p) <= 8:
                 bin_input = p
-            elif len(p) in [3, 4]:    # CVV
-                fixed_cvv = p
-            elif 1 <= int(p) <= 500:  # Amount (increased max to 500)
+            elif 1 <= int(p) <= 1000:
                 amount = int(p)
 
     if not bin_input:
         return await event.reply(
-            "**Usage Examples:**\n"
-            "• `/gen 411111` → 50 cards\n"
-            "• `/gen 100 545301` → 100 cards\n"
-            "• `/gen 30 434256 777` → 30 cards with fixed CVV 777\n\n"
-            "Max amount: **500**"
+            "**Usage:**\n"
+            "`/gen 420495` → Generate **10** cards\n"
+            "`/gen 100 420495` → Generate **100** cards"
         )
 
-    if not bin_input.isdigit() or not (6 <= len(bin_input) <= 8):
-        return await event.reply("❌ BIN must be 6–8 digits (e.g. `411111` or `54530111`)")
+    loading = await event.reply(f"⚡ Generating **{amount}** cards with BIN `{bin_input}`...")
 
-    amount = min(max(amount, 1), 500)
-
-    loading = await event.reply(f"🔄 Generating **{amount}** Luhn-valid cards with BIN `{bin_input}`...")
-
-    live_cards = []   # We'll store generated cards here
-
+    generated = []
     for _ in range(amount):
         card_number = generate_card_from_bin(bin_input)
         month = random.randint(1, 12)
-        year = random.randint(25, 30)   # 2025 to 2030
-        cvv = fixed_cvv if fixed_cvv else f"{random.randint(0, 999):03d}"
-
+        year = random.randint(26, 33)        # 2026 to 2033
+        cvv = f"{random.randint(100, 999)}"
         full_cc = f"{card_number}|{month:02d}|{year:02d}|{cvv}"
-        live_cards.append(full_cc)
+        generated.append(full_cc)
 
-    # Final Result
-    result = f"""**✅ GEN Complete — BIN {bin_input}**
-Cards Generated: **{amount}**
-All cards are **Luhn Valid**
-
-**Generated Cards:**
-
-💾 Saved to `generated_cards.txt`
-"""
-
-    # Save to file
+    # Save all cards to txt file
     try:
         async with aiofiles.open("generated_cards.txt", "a", encoding="utf-8") as f:
-            await f.write("\n".join(live_cards) + "\n\n")
+            await f.write(f"\n=== GEN {bin_input} | {amount} Cards | {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+            await f.write("\n".join(generated) + "\n\n")
     except:
-        result += "\n⚠️ Could not save to file"
+        pass
+
+    # Final Beautiful Output
+    result = f"""⚡ **𝗖𝗖 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗼𝗿** ⚡
+⚡ 「•」 **𝗕𝗜𝗡** ⇾ `{bin_input}`
+⚡ 「•」 **𝗔𝗺𝗼𝘂𝗻𝘁** ⇾ `{amount}`
+
+""" + "\n".join(generated[:10])   # Show first 10 cards
+
+    if amount > 10:
+        result += f"\n\n... and {amount-10} more cards"
+
+    result += f"""
+⚡ 「•」 **𝗜𝗻𝗳𝗼** ⇾ VISA - PREPAID
+⚡ 「•」 **𝗜𝘀𝘀𝘂𝗲𝗿** ⇾ PATHWARD, N.A.
+⚡ 「•」 **𝗖𝗼𝘂𝗻𝘁𝗿𝘆** ⇾ UNITED STATES OF AMERICA 🇺🇸
+
+💾 All {amount} cards saved to `generated_cards.txt`
+"""
 
     await loading.edit(result)
 
 
-# ==================== LUHN ALGORITHM CARD GENERATOR ====================
+# ==================== LUHN GENERATOR ====================
 def generate_card_from_bin(bin_str: str) -> str:
-    """Generates a valid 16-digit card number from BIN using Luhn algorithm"""
-    bin_str = bin_str.strip()[:8]                    # Max 8 digits for BIN
-    prefix = bin_str.ljust(15, '0')                  # Pad to 15 digits
+    bin_str = bin_str.strip()[:8]
+    prefix = bin_str.ljust(15, '0')
     digits = [int(d) for d in prefix]
 
-    # Luhn Algorithm: Double every second digit from right
     for i in range(len(digits)-2, -1, -2):
         digits[i] *= 2
         if digits[i] > 9:
@@ -1371,10 +1357,8 @@ def generate_card_from_bin(bin_str: str) -> str:
 
     total = sum(digits)
     check_digit = (10 - (total % 10)) % 10
-
     return prefix[:-1] + str(check_digit)
-
-
+    
 @client.on(events.NewMessage(pattern=r'(?i)^[/.]st(\s+|$)'))
 async def st_command(event):
     can_access, access_type = await can_use(event.sender_id, event.chat)
