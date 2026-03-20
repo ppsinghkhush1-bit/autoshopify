@@ -592,56 +592,37 @@ def parse_proxy(proxy: str):
 @client.on(events.NewMessage(pattern=r'(?i)^[/.](start|cmds?|commands?)$'))
 async def start(event):
     user_id = event.sender_id
-    chat = event.chat
-    
     if await is_banned_user(user_id):
         return await event.reply(banned_user_message())
 
-    can_access, access_type = await can_use(user_id, chat)
-    current_limit = await get_cc_limit(access_type, user_id)
+    can_access, access_type = await can_use(user_id, event.chat)
+    limit = await get_cc_limit(access_type, user_id)
 
     premium_status = "🆓 **Free User**"
     if await is_premium_user(user_id):
-        try:
-            premium_users = await load_json(PREMIUM_FILE)
-            data = premium_users.get(str(user_id))
-            if data and 'expiry' in data:
-                expiry = datetime.datetime.fromisoformat(data['expiry'])
-                remaining = max(0, (expiry - datetime.datetime.now()).days)
-                premium_status = f"💎 **Premium Active** | Expires in {remaining} days"
-        except:
-            premium_status = "💎 **Premium Active**"
+        premium_status = "💎 **Premium Active**"
 
-    role_tag = ""
-    if await is_owner(user_id):
-        role_tag = "👑 Bot Owner"
-    elif await is_admin(user_id):
-        role_tag = "⭐ Bot Admin"
+    role = "👑 Bot Owner" if await is_owner(user_id) else "⭐ Bot Admin" if await is_admin(user_id) else "Chef"
 
-    text = f"""🍳 **CC Chef Bot – Welcome {role_tag or 'Chef'}** 🔥
+    text = f"""🍳 **CC Chef Bot – Welcome {role}** 🔥
 {premium_status}
-**Your Current Limit:** {current_limit:,} CCs per check
+**Your Current Limit:** {limit:,} CCs per check
 
 ━━━━━━ **Main Gates** ━━━━━━
 **Shopify Auto-Charge**
-• `/sh` → Single CC check
-• `/msh` → Mass check from message
-• `/mtxt` → Check full .txt file
-• `/ran` → Random sites from sites.txt
-
-**Stripe Auth**
-• `/st` → Single Stripe check
-• `/mst` → Mass Stripe from text
-• `/mstxt` → Stripe from .txt file
+• `/sh` → Single check
+• `/msh` → Mass check
+• `/mtxt` → From .txt file
+• `/ran` → Random sites
 
 **Tools**
-• `/add` → Add domains
+• `/add` → Add sites
 • `/addpxy` → Add proxy
 • `/info` → Your stats
 • `/redeem <key>` → Activate key
 
-Start cooking or get left behind 🔥
-Support: @Dreadsync_2 | Free Group: https://t.me/deebuchecked
+Start cooking 🔥
+Support: @Dreadsync_2
 """
     await event.reply(text)
 
@@ -3193,10 +3174,13 @@ async def main():
     admins = await load_admins()
     await save_admins(admins)
 
-    print("𝘽𝙊𝙏 𝙍𝙐𝙉𝙉𝙄𝙉𝙂 💨")
-    await client.start(bot_token=BOT_TOKEN)
-    await client.run_until_disconnected()
+    print("✅ Files initialized")
+    print("👑 Owner set as Admin")
+    print("🔥 𝘽𝙊𝙏 𝙍𝙐𝙉𝙉𝙄𝙉𝙂 💨")
 
+    await client.start(bot_token=BOT_TOKEN)
+    print("✅ Bot connected successfully!")
+    await client.run_until_disconnected()
 
 if __name__ == "__main__":
     asyncio.run(main())
