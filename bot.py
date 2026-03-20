@@ -10,35 +10,33 @@ API_ID = 37056675
 API_HASH = "7517ae9cd54e88cb63f39a061d8bb77f"
 BOT_TOKEN = "8644266957:AAEYmAA2uiR9732a_8xnyBJUEr_NXUyyCPs"
 
-# Dynamic Admin System
-ADMIN_FILE = "admins.json"
-OWNER_ID = 8353717748  # Bot Owner (cannot be removed)
-
+OWNER_ID = 8353717748
 GROUP_ID = -1003578985585
 STRIPE_KEYS = ["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"]
 
 # PREMIUM CUSTOM EMOJI MAPPING
 STATUS_EMOJIS = {
-    "CHARGED":           "5197434882321567830",    # 💰 green/money explosion
-    "APPROVED":          "6147565374289220368",    # ✅ big green check
-    "DECLINED":          "5372865660500067203",    # ❌ bold red cross / dead
-    "INSUFFICIENT FUNDS": "6030821243991626781",   # 💸 money with slash
-    "CVV ERROR":         "6298749584613050529",    # 🔒 lock / security fail
-    "CLOUDFLARE":        "5780864206177834457",    # 🤡 clown / detected
-    "3DS REQUIRED":      "5440409175190415592",    # ⚠️ warning / 3DS
-    "PROXY DEAD":        "6035277294036061660",    # 🪦 tombstone / ghost
+    "CHARGED": "5197434882321567830",
+    "APPROVED": "6147565374289220368",
+    "DECLINED": "5372865660500067203",
+    "INSUFFICIENT FUNDS": "6030821243991626781",
+    "CVV ERROR": "6298749584613050529",
+    "CLOUDFLARE": "5780864206177834457",
+    "3DS REQUIRED": "5440409175190415592",
+    "PROXY DEAD": "6035277294036061660",
 }
 
 SPECIAL_EMOJIS = {
-    "PRICE":             "5429518319243775957",    # fancy coin/dollar after price
-    "LOADING":           "5927197323955278457",    # animated cooking/spinner
-    "SUCCESS_SMALL":     "5456441785595206330",    # small green tick
-    "FIRE":              "5798670723975221399",    # 🔥 enhanced flame
-    "STOP":              "5276448712766266718",    # ⛔️ big red stop
-    "STATS":             "6289610422488139897",    # 📊 chart
+    "PRICE": "5429518319243775957",
+    "LOADING": "5927197323955278457",
+    "SUCCESS_SMALL": "5456441785595206330",
+    "FIRE": "5798670723975221399",
+    "STOP": "5276448712766266718",
+    "STATS": "6289610422488139897",
 }
 
-# Files
+# ==================== FILES & GLOBAL VARIABLES ====================
+ADMIN_FILE = "admins.json"
 PREMIUM_FILE = "premium.json"
 FREE_FILE = "free_users.json"
 SITE_FILE = "user_sites.json"
@@ -46,7 +44,12 @@ KEYS_FILE = "keys.json"
 CC_FILE = "cc.txt"
 BANNED_FILE = "banned_users.json"
 PROXY_FILE = "proxy.json"
-ADMIN_FILE = "admins.json"   # ← Added
+
+ACTIVE_MTXT_PROCESSES = {}
+TEMP_WORKING_SITES = {}
+
+# ─── CREATE CLIENT ONLY ONCE ─────────────────────────────────────
+client = TelegramClient('cc_bot', API_ID, API_HASH)
 
 stripe.api_key = STRIPE_KEYS[0]
 
@@ -3187,30 +3190,13 @@ async def initialize_files():
 
 async def main():
     await initialize_files()
+    admins = await load_admins()
+    await save_admins(admins)
 
-    # Create a wrapper for get_cc_limit that can be used by external modules
-    def get_cc_limit_wrapper(access_type, user_id=None):
-        return get_cc_limit(access_type, user_id)
-    
-    utils_for_all = {
-        'can_use': can_use,
-        'banned_user_message': banned_user_message,
-        'access_denied_message_with_button': access_denied_message_with_button,
-        'extract_card': extract_card,
-        'extract_all_cards': extract_all_cards,
-        'get_bin_info': get_bin_info,
-        'save_approved_card': save_approved_card,
-        'get_cc_limit': get_cc_limit_wrapper,
-        'pin_charged_message': pin_charged_message,
-        # 'ADMIN_ID': ADMIN_ID,   ← removed (no longer needed)
-        'load_json': load_json,
-        'save_json': save_json
-    }
-
-    
     print("𝘽𝙊𝙏 𝙍𝙐𝙉𝙉𝙄𝙉𝙂 💨")
     await client.start(bot_token=BOT_TOKEN)
     await client.run_until_disconnected()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
